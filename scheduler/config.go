@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -89,7 +88,6 @@ func (v *SimpleValidator) OneOf(field, value string, allowed ...string) *SimpleV
 		return v // 空值不验证
 	}
 
-	// 使用 slices.Contains 简化循环
 	for _, a := range allowed {
 		if value == a {
 			return v
