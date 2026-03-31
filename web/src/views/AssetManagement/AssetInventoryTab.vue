@@ -13,7 +13,7 @@
             {{ $t('asset.comprehensive') || '综合资产' }}
           </span>
         </template>
-        <AssetInventoryCardView v-if="activeLeftTab === 'comprehensive'" />
+        <AssetInventoryCardView />
       </el-tab-pane>
 
       <!-- 端口 (Ports) -->
@@ -24,7 +24,7 @@
             {{ $t('asset.port') || '端口' }}
           </span>
         </template>
-        <AssetAllView v-if="activeLeftTab === 'port'" />
+        <AssetAllView />
       </el-tab-pane>
 
       <!-- 域名 (Domains) -->
@@ -35,7 +35,7 @@
             {{ $t('asset.domains') || '域名' }}
           </span>
         </template>
-        <DomainView v-if="activeLeftTab === 'domain'" />
+        <DomainView />
       </el-tab-pane>
 
       <!-- IP -->
@@ -46,7 +46,7 @@
             {{ $t('asset.ips') || 'IP' }}
           </span>
         </template>
-        <IPView v-if="activeLeftTab === 'ip'" />
+        <IPView />
       </el-tab-pane>
 
       <!-- 站点 (Sites) -->
@@ -57,7 +57,7 @@
             {{ $t('asset.sites') || '站点' }}
           </span>
         </template>
-        <SiteView v-if="activeLeftTab === 'site'" />
+        <SiteView />
       </el-tab-pane>
 
       <!-- 目录扫描 (Directory Scans) -->
@@ -68,7 +68,7 @@
             {{ $t('asset.dirManagement') || '目录扫描' }}
           </span>
         </template>
-        <DirScanView v-if="activeLeftTab === 'dirscan'" />
+        <DirScanView />
       </el-tab-pane>
 
       <!-- 漏洞风险 (Vuls) -->
@@ -79,7 +79,7 @@
             {{ $t('asset.vulnerability') || '漏洞风险' }}
           </span>
         </template>
-        <VulView v-if="activeLeftTab === 'vul'" />
+        <VulView />
       </el-tab-pane>
     </el-tabs>
   </div>

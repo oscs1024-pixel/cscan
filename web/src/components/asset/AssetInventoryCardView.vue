@@ -9,10 +9,15 @@
         class="search-input"
         @input="handleSearch"
       </el-autocomplete>
-      <el-button @click="showFilters = !showFilters">
-        <el-icon><Filter /></el-icon>
-        {{ t('asset.assetInventoryTab.filters') }}
-      </el-button>
+      <div class="header-actions">
+        <el-button @click="showFilters = !showFilters">
+          <el-icon><Filter /></el-icon>
+          {{ t('asset.assetInventoryTab.filters') }}
+        </el-button>
+      </div>
+      <div class="toolbar-right">
+        <el-button type="danger" plain @click="handleClear">{{ t('asset.clearData') }}</el-button>
+      </div>
     </div>
 
     <div v-if="showFilters" class="filters-panel">
@@ -376,7 +381,7 @@ import {
   Warning,
   Edit
 } from '@element-plus/icons-vue'
-import { getAssetInventory, getAssetStat, updateAssetLabels, getAssetFilterOptions, deleteAsset, getAssetHistory, getAssetExposures } from '@/api/asset'
+import { getAssetInventory, getAssetStat, updateAssetLabels, getAssetFilterOptions, deleteAsset, getAssetHistory, getAssetExposures, clearAssets } from '@/api/asset'
 import { formatScreenshotUrl, handleScreenshotError } from '@/utils/screenshot'
 import AssetDetailDrawer from '@/components/asset/AssetDetailDrawer.vue'
 
@@ -608,8 +613,9 @@ const loadData = async () => {
   host: item.host,
           port: item.port,
           status: String(item.status || ''),
-          asn: item.asn || '', // 绌哄瓧绗︿覆锛屼笉鏄剧ず榛樿
-  ip: item.ip || '',
+          asn: item.asn || '', // 空字符串，不显示默认
+          ip: item.ip || '',
+          ips: item.ips || [],
           url: item.port && item.port !== 0 ? `${item.port === 443 ? 'https' : 'http'}://${item.host}:${item.port}` : `http://${item.host}`,
           screenshot: item.screenshot || '',
           title: item.title || item.host,
@@ -705,7 +711,7 @@ const applyFilters = () => {
   loadData()
 }
 
-const resetFilters = () => {
+const resetFilters = async () => {
   filters.value = {
     technologies: [],
     ports: [],
@@ -715,14 +721,19 @@ const resetFilters = () => {
     iconHash: ''
   }
   searchQuery.value = ''
+  currentPage.value = 1
 
   const newQuery = { ...route.query }
   delete newQuery.domain
   delete newQuery.page
   delete newQuery.pageSize
-  router.replace({ query: newQuery }).catch(() => {})
 
-  currentPage.value = 1
+  try {
+    await router.replace({ query: newQuery })
+  } catch (error) {
+    // ignore duplicated navigation
+  }
+
   loadData()
 }
 
@@ -843,9 +854,9 @@ const handleDelete = async (asset) => {
         type: 'warning'
       }
     )
-    
+
     // 璋冪敤鍒犻櫎 API锛屼紶閫掕祫浜D鍜屽伐浣滅┖闂碔D
-    const res = await deleteAsset({ 
+    const res = await deleteAsset({
       id: asset.id,
       workspaceId: asset.workspaceId
     })
@@ -856,10 +867,36 @@ const handleDelete = async (asset) => {
       ElMessage.error(res.msg || t('asset.assetInventoryTab.deleteFailed'))
     }
   } catch (error) {
-    // 鐢ㄦ埛鍙栨秷鎴栧垹闄ゅけ
-  if (error !== 'cancel') {
-      console.error('鍒犻櫎澶辫触:', error)
+    if (error !== 'cancel') {
       ElMessage.error(t('asset.assetInventoryTab.deleteFailed'))
+    }
+  }
+}
+
+const handleClear = async () => {
+  try {
+    await ElMessageBox.confirm(
+      t('asset.confirmClearAll'),
+      t('common.warning'),
+      {
+        type: 'error',
+        confirmButtonText: t('asset.confirmClearBtn'),
+        cancelButtonText: t('common.cancel')
+      }
+    )
+
+    const res = await clearAssets()
+    if (res.code === 0) {
+      ElMessage.success(res.msg || t('asset.clearSuccess'))
+      resetFilters()
+      loadStat()
+    } else {
+      ElMessage.error(res.msg || t('asset.clearFailed'))
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('清空资产失败:', error)
+      ElMessage.error(t('asset.clearFailed'))
     }
   }
 }
@@ -1105,10 +1142,27 @@ function querySearch(queryString, cb, ...fields) {
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
-    
+    align-items: center;
+    justify-content: flex-start;
+
     .search-input {
-      flex: 1;
-      max-width: 500px;
+      width: 500px;
+      max-width: 100%;
+      flex: 0 0 auto;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .toolbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
     }
   }
   

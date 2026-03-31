@@ -198,6 +198,9 @@
           <el-descriptions-item label="URL">
             <a :href="getAssetUrl(currentItem)" target="_blank">{{ getAssetUrl(currentItem) }}</a>
           </el-descriptions-item>
+          <el-descriptions-item label="IP">
+            {{ currentItem.ips?.length ? currentItem.ips.join(", ") : (currentItem.ip || "-") }}
+          </el-descriptions-item>
           <el-descriptions-item label="Status">
             <el-tag :type="getStatusType(currentItem.httpStatus)">{{ currentItem.httpStatus }}</el-tag>
           </el-descriptions-item>

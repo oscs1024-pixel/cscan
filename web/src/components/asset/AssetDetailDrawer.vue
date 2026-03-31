@@ -34,7 +34,7 @@
           </div>
           <div class="info-row">
             <span class="info-label">{{ t('asset.ip') }}:</span>
-            <span class="info-value">{{ asset.ip || '-' }}</span>
+            <span class="info-value">{{ asset.ips?.length ? asset.ips.join(', ') : (asset.ip || '-') }}</span>
           </div>
           <div v-if="asset.status && asset.status !== '0'" class="info-row">
             <span class="info-label">{{ t('asset.statusCode') }}:</span>

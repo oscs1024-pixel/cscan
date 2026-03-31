@@ -12,10 +12,7 @@
             :fetch-suggestions="querySearch"
             :placeholder="searchPlaceholder"
             clearable
-            @select="handleSearch"
             @keyup.enter="handleSearch"
-            @clear="handleSearch"
-            @input="handleSearch"
             class="search-input"
           >
             <template #prefix>
@@ -51,7 +48,6 @@
             :type="item.inputType || 'text'"
             clearable
             :fetch-suggestions="(qs, cb) => queryFieldSearch(qs, cb, item.prop)"
-            @select="handleSearch"
             @keyup.enter="handleSearch"
             @clear="handleSearch"
             v-bind="item.props || {}"

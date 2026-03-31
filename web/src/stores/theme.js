@@ -86,7 +86,7 @@ export const useThemeStore = defineStore('theme', () => {
         theme.value = res.config.theme || 'system'
         colorTheme.value = res.config.colorTheme || 'default'
         loaded.value = true
-        updateTheme()
+        // watch([theme, colorTheme]) 会自动触发 updateTheme()，无需手动调用
       }
     } catch (e) {
       console.error('Failed to load theme config:', e)
@@ -110,9 +110,12 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 初始化主题
   async function initTheme() {
-    // 先从服务端加载
+    // 先从服务端加载（loadFromServer 内部会设置 ref，watch 会自动触发 updateTheme）
     await loadFromServer()
-    updateTheme()
+    // 如果服务端加载失败（loaded 仍为 false），手动触发一次确保主题生效
+    if (!loaded.value) {
+      updateTheme()
+    }
   }
 
   // 更新主题

@@ -211,8 +211,6 @@ const isSwitchingWorkspace = ref(false)
 function handleWorkspaceChange(val) {
   isSwitchingWorkspace.value = true
   workspaceStore.setCurrentWorkspace(val)
-  // 触发页面刷新数据
-  window.dispatchEvent(new CustomEvent('workspace-changed', { detail: val }))
 
   // 给点延迟让数据和动画能展示出来
   setTimeout(() => {
