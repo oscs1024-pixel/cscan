@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -185,6 +186,32 @@ func (m *AssetModel) FindWithSort(ctx context.Context, filter bson.M, page, page
 	return docs, nil
 }
 
+// FindFull 全字段查询（不裁剪 body/header 等大字段），用于指纹匹配等需要完整数据的场景
+func (m *AssetModel) FindFull(ctx context.Context, filter bson.M, page, pageSize int) ([]Asset, error) {
+	opts := options.Find()
+	if page > 0 && pageSize > 0 {
+		opts.SetSkip(int64((page - 1) * pageSize))
+		opts.SetLimit(int64(pageSize))
+	}
+	opts.SetSort(bson.D{{Key: "update_time", Value: -1}})
+
+	cursor, err := m.coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var docs []Asset
+	for cursor.Next(ctx) {
+		var doc Asset
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, cursor.Err()
+}
+
 // FindWithScreenshot 截图查询专用，包含 screenshot 字段
 func (m *AssetModel) FindWithScreenshot(ctx context.Context, filter bson.M, page, pageSize int) ([]Asset, error) {
 	opts := options.Find()
@@ -213,6 +240,7 @@ func (m *AssetModel) FindWithScreenshot(ctx context.Context, filter bson.M, page
 }
 
 // FindWithOffset 支持自定义 skip 和 limit（用于多工作空间聚合分页）
+// sortField 以 "-" 前缀表示降序（如 "-update_time"），无前缀表示升序（如 "host"）
 func (m *AssetModel) FindWithOffset(ctx context.Context, filter bson.M, skip, limit int64, sortField string) ([]Asset, error) {
 	opts := options.Find()
 	if skip > 0 {
@@ -223,7 +251,12 @@ func (m *AssetModel) FindWithOffset(ctx context.Context, filter bson.M, skip, li
 	}
 	// 排除 body/header/cert 等超大字段，但保留 screenshot 供卡片视图展示
 	opts.SetProjection(AssetScreenshotProjection)
-	opts.SetSort(bson.D{{Key: sortField, Value: -1}})
+	sortOrder := 1 // 升序
+	if strings.HasPrefix(sortField, "-") {
+		sortField = sortField[1:]
+		sortOrder = -1 // 降序
+	}
+	opts.SetSort(bson.D{{Key: sortField, Value: sortOrder}})
 
 	cursor, err := m.coll.Find(ctx, filter, opts)
 	if err != nil {
@@ -779,7 +812,6 @@ func (m *AssetModel) Upsert(ctx context.Context, doc *Asset) error {
 	setFields := bson.M{
 		"host":                    doc.Host,
 		"port":                    doc.Port,
-		"category":                doc.Category,
 		"service":                 doc.Service,
 		"source":                  doc.Source,
 		"is_http":                 doc.IsHTTP,
@@ -789,6 +821,9 @@ func (m *AssetModel) Upsert(ctx context.Context, doc *Asset) error {
 	}
 
 	// 有值才更新的字段，避免用空值覆盖已有数据
+	if doc.Category != "" {
+		setFields["category"] = doc.Category
+	}
 	if doc.Server != "" {
 		setFields["server"] = doc.Server
 	}
