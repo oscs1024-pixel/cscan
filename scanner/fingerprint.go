@@ -118,7 +118,7 @@ func (s *FingerprintScanner) Scan(ctx context.Context, config *ScanConfig) (*Sca
 		CustomEngine:  true, // 默认启用自定义指纹引擎
 		Screenshot:    false,
 		Timeout:       adaptive.FingerprintTimeout,     // 自适应: 低配600s, 中配300s, 高配300s
-		TargetTimeout: adaptive.FingerprintTargetTmout, // 自适应: 低配20s, 中配30s, 高配30s
+		TargetTimeout: adaptive.FingerprintTargetTmout, // 自适应: 低配60s, 中配90s, 高配90s
 		Concurrency:   adaptive.FingerprintConcurrency, // 自适应: 低配3, 中配5, 高配5
 	}
 	if config.Options != nil {
@@ -192,12 +192,30 @@ func (s *FingerprintScanner) Scan(ctx context.Context, config *ScanConfig) (*Sca
 		taskLog("DEBUG", "Using builtin method for fingerprint detection")
 	}
 
+	// 记录已处理的资产索引，用于超时时补充未处理的资产
+	processedSet := make(map[int]bool)
+
 	// 扫描每个目标
 	for i, asset := range httpAssets {
 		select {
 		case <-ctx.Done():
-			taskLog("INFO", "Fingerprint: scan cancelled")
-			return result, ctx.Err()
+			taskLog("WARN", "Fingerprint scan timeout after processing %d/%d assets, preserving httpx results for remaining assets", len(processedSet), len(httpAssets))
+			// 超时时，将 httpx 已获取到基本信息但未进行补充扫描的资产也加入结果
+			for j := i; j < len(httpAssets); j++ {
+				remainAsset := httpAssets[j]
+				if remainAsset.Title != "" || remainAsset.HttpStatus != "" || len(remainAsset.App) > 0 {
+					taskLog("DEBUG", "Preserving httpx result for %s:%d (title=%s, apps=%d)", remainAsset.Host, remainAsset.Port, remainAsset.Title, len(remainAsset.App))
+				}
+				result.Assets = append(result.Assets, remainAsset)
+			}
+			// 同样补充非HTTP资产
+			for _, asset := range config.Assets {
+				if !isHttpAsset(asset) {
+					result.Assets = append(result.Assets, asset)
+				}
+			}
+			taskLog("INFO", "Fingerprint: total %d assets preserved after timeout", len(result.Assets))
+			return result, nil
 		default:
 			// 如果使用httpx且已获取到基本信息，只执行附加功能
 			if useHttpx && asset.Title != "" && asset.HttpStatus != "" {
@@ -218,6 +236,7 @@ func (s *FingerprintScanner) Scan(ctx context.Context, config *ScanConfig) (*Sca
 				}
 				targetCancel()
 			}
+			processedSet[i] = true
 			result.Assets = append(result.Assets, asset)
 		}
 	}

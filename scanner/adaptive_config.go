@@ -89,7 +89,7 @@ func GetAdaptiveScanConfig() *AdaptiveScanConfig {
 		config.NucleiRetries = 1
 		config.FingerprintConcurrency = 3
 		config.FingerprintTimeout = 600
-		config.FingerprintTargetTmout = 20
+		config.FingerprintTargetTmout = 60
 	case ProfileMedium:
 		// 中配 (<=8核 且 <=16GB): 适度调整
 		config.NaabuRate = 1500
@@ -100,7 +100,7 @@ func GetAdaptiveScanConfig() *AdaptiveScanConfig {
 		config.NucleiRetries = 1
 		config.FingerprintConcurrency = 5
 		config.FingerprintTimeout = 300
-		config.FingerprintTargetTmout = 30
+		config.FingerprintTargetTmout = 90
 	case ProfileHigh:
 		// 高配 (>8核 或 >16GB): 使用原始高性能默认值
 		config.NaabuRate = 3000
@@ -111,7 +111,7 @@ func GetAdaptiveScanConfig() *AdaptiveScanConfig {
 		config.NucleiRetries = 1
 		config.FingerprintConcurrency = 5
 		config.FingerprintTimeout = 300
-		config.FingerprintTargetTmout = 30
+		config.FingerprintTargetTmout = 90
 	}
 
 	logx.Infof("[AdaptiveConfig] System profile: %s (CPU: %d cores, Mem: %d MB)", profile, cpuCores, totalMemMB)
