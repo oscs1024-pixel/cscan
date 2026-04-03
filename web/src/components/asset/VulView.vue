@@ -157,8 +157,8 @@ const vulSearchItems = computed(() => [
 ])
 
 function getSeverityType(severity) {
-  const map = { critical: 'danger', high: 'danger', medium: 'warning', low: 'info', info: '', unknown: 'info' }
-  return map[severity] || ''
+  const map = { critical: 'danger', high: 'danger', medium: 'warning', low: 'info', info: 'info', unknown: 'info' }
+  return map[severity] || 'info'
 }
 
 function getSeverityLabel(severity) {

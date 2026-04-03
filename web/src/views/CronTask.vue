@@ -23,7 +23,7 @@
         :data="tableData" 
         v-loading="loading" 
         stripe
-        @selection-change="handleSelectionChange"
+        @selection-change="handleCronSelectionChange"
       >
         <el-table-column type="selection" width="50" />
         <el-table-column prop="name" :label="$t('cronTask.cronTaskName')" min-width="140" />
@@ -1169,6 +1169,7 @@ const dictList = ref([])
 const dictLoading = ref(false)
 const dictTableRef = ref()
 const selectedDictIds = ref([])
+const selectedDictRows = ref([])
 
 // 子域名字典选择相关
 const subdomainDictSelectDialogVisible = ref(false)
@@ -1176,6 +1177,7 @@ const subdomainDictList = ref([])
 const subdomainDictLoading = ref(false)
 const subdomainDictTableRef = ref()
 const selectedSubdomainDictIds = ref([])
+const selectedSubdomainDictRows = ref([])
 
 // 递归爆破字典选择相关
 const recursiveDictSelectDialogVisible = ref(false)
@@ -1280,6 +1282,90 @@ const selectedTask = computed(() => {
   return taskList.value.find(t => t.taskId === form.mainTaskId)
 })
 
+// 获取Cron表达式的中文描述（简单映射）
+function getCronDescription(cronSpec) {
+  if (!cronSpec) return ''
+  const preset = cronPresets.value.find(p => p.value === cronSpec)
+  if (preset) return preset.label
+  return '自定义Cron表达式'
+}
+
+// 选择主任务
+function onTaskSelect(taskId) {
+  const task = taskList.value.find(t => t.taskId === taskId)
+  if (task) {
+    // 自动回填扫描目标
+    form.target = task.target
+    // 自动取个名字（如果没有名字的话）
+    if (!form.name && task.name) {
+      form.name = `${task.name}-定时扫描`
+    }
+  }
+}
+
+// 验证Cron表达式
+async function validateCron() {
+  if (!form.cronSpec) {
+    cronValidation.valid = false
+    cronValidation.error = t('cronTask.cronValidateError') || '请输入Cron表达式'
+    cronValidation.nextTimes = []
+    return
+  }
+
+  try {
+    const res = await validateCronSpec({ cronSpec: form.cronSpec })
+    if (res.code === 0 && res.data) {
+      cronValidation.valid = res.data.valid
+      if (res.data.valid) {
+        cronValidation.error = ''
+        cronValidation.nextTimes = res.data.nextTimes || []
+      } else {
+        cronValidation.error = res.data.message || 'Cron表达式无效'
+        cronValidation.nextTimes = []
+      }
+    } else {
+      cronValidation.valid = false
+      cronValidation.error = res.msg || '验证失败'
+      cronValidation.nextTimes = []
+    }
+  } catch (error) {
+    cronValidation.valid = false
+    cronValidation.error = '验证请求异常'
+    cronValidation.nextTimes = []
+  }
+}
+
+// 提交表单
+async function handleSubmit() {
+  if (!formRef.value) return
+
+  await formRef.value.validate(async (valid) => {
+    if (valid) {
+      submitting.value = true
+      try {
+        // 构建提交数据
+        const submitData = {
+          ...form
+        }
+
+        const res = await saveCronTask(submitData)
+        if (res.code === 0) {
+          ElMessage.success(isEdit.value ? (t('common.updateSuccess') || '编辑成功') : (t('common.createSuccess') || '创建成功'))
+          dialogVisible.value = false
+          loadData()
+        } else {
+          ElMessage.error(res.msg || (isEdit.value ? '编辑失败' : '创建失败'))
+        }
+      } catch (error) {
+        console.error('保存定时任务失败:', error)
+        ElMessage.error(isEdit.value ? '编辑失败' : '创建失败')
+      } finally {
+        submitting.value = false
+      }
+    }
+  })
+}
+
 // 加载数据
 async function loadData() {
   loading.value = true
@@ -1301,6 +1387,410 @@ async function loadData() {
     loading.value = false
   }
 }
+
+// (Removed duplicate POC selection states)
+
+// 分页辅助
+const dictPage = ref(1)
+const dictPageSize = ref(10)
+const dictTotal = ref(0)
+const templatePage = ref(1)
+const templatePageSize = ref(10)
+const templateTotal = ref(0)
+const customPocPage = ref(1)
+const customPocPageSize = ref(10)
+const customPocTotal = ref(0)
+const pocSearchQuery = ref('')
+
+async function handleDictDialogOpen() {
+  dictLoading.value = true
+  try {
+    const res = await getDirScanDictEnabledList()
+    if (res.code === 0) {
+      dictList.value = res.data || []
+      nextTick(() => {
+        if (dictTableRef.value && form.dirscanDictIds) {
+          dictList.value.forEach(row => {
+            if (form.dirscanDictIds.includes(row.id)) {
+              dictTableRef.value.toggleRowSelection(row, true)
+            }
+          })
+        }
+      })
+    }
+  } catch (e) {} finally { dictLoading.value = false }
+  dictSelectDialogVisible.value = true
+}
+
+async function handleSubdomainDictDialogOpen() {
+  subdomainDictLoading.value = true
+  try {
+    const res = await getSubdomainDictEnabledList()
+    if (res.code === 0) {
+      subdomainDictList.value = res.data || []
+      nextTick(() => {
+        if (subdomainDictTableRef.value && form.subdomainDictIds) {
+          subdomainDictList.value.forEach(row => {
+            if (form.subdomainDictIds.includes(row.id)) {
+              subdomainDictTableRef.value.toggleRowSelection(row, true)
+            }
+          })
+        }
+      })
+    }
+  } catch (e) {} finally { subdomainDictLoading.value = false }
+  subdomainDictSelectDialogVisible.value = true
+}
+
+async function handleRecursiveDictDialogOpen() {
+  recursiveDictLoading.value = true
+  try {
+    const res = await getSubdomainDictEnabledList()
+    if (res.code === 0) {
+      recursiveDictList.value = res.data || []
+      nextTick(() => {
+        if (recursiveDictTableRef.value && form.recursiveDictIds) {
+          recursiveDictList.value.forEach(row => {
+            if (form.recursiveDictIds.includes(row.id)) {
+              recursiveDictTableRef.value.toggleRowSelection(row, true)
+            }
+          })
+        }
+      })
+    }
+  } catch (e) {} finally { recursiveDictLoading.value = false }
+  recursiveDictSelectDialogVisible.value = true
+}
+
+async function loadNucleiTemplatesForSelect() {
+  nucleiTemplateLoading.value = true
+  try {
+    const res = await getNucleiTemplateList({
+      page: nucleiTemplatePagination.page, pageSize: nucleiTemplatePagination.pageSize,
+      keyword: nucleiTemplateFilter.keyword, severity: nucleiTemplateFilter.severity,
+      category: nucleiTemplateFilter.category, tag: nucleiTemplateFilter.tag
+    })
+    if (res.code === 0) {
+      nucleiTemplateList.value = res.data.list || []
+      nucleiTemplatePagination.total = res.data.total
+      nextTick(() => {
+        if (nucleiTableRef.value && form.pocscanNucleiTemplateIds) {
+          nucleiTemplateList.value.forEach(row => {
+            if (form.pocscanNucleiTemplateIds.includes(row.id)) {
+              nucleiTableRef.value.toggleRowSelection(row, true)
+            }
+          })
+        }
+      })
+    }
+  } finally { nucleiTemplateLoading.value = false }
+}
+
+async function loadCustomPocsForSelect() {
+  customPocLoading.value = true
+  try {
+    const res = await getCustomPocList({
+      page: customPocPagination.page, pageSize: customPocPagination.pageSize,
+      name: customPocFilter.name, severity: customPocFilter.severity, tag: customPocFilter.tag
+    })
+    if (res.code === 0) {
+      customPocList.value = res.data.list || []
+      customPocPagination.total = res.data.total
+      nextTick(() => {
+        if (customPocTableRef.value && form.pocscanCustomPocIds) {
+          customPocList.value.forEach(row => {
+            if (form.pocscanCustomPocIds.includes(row.id)) {
+              customPocTableRef.value.toggleRowSelection(row, true)
+            }
+          })
+        }
+      })
+    }
+  } finally { customPocLoading.value = false }
+}
+
+function handlePocDialogOpen(type) {
+  if (type) currentPocSelectType.value = type
+  if (pocSelectTab.value === 'nuclei') {
+    loadNucleiTemplatesForSelect()
+  } else {
+    loadCustomPocsForSelect()
+  }
+  pocSelectDialogVisible.value = true
+}
+
+function handleDictSelectionChange(val) { selectedDictRows.value = val }
+function handleSubdomainDictSelectionChange(val) { selectedSubdomainDictRows.value = val }
+function handleRecursiveDictSelectionChange(val) { selectedRecursiveDictRows.value = val }
+function handleNucleiSelectionChange(val) { selectedPocRows.value = val }
+function handleCustomPocSelectionChange(val) { selectedPocRows.value = val }
+
+async function selectAllNucleiTemplates() {
+  selectAllNucleiLoading.value = true
+  try {
+    const res = await getNucleiTemplateList({
+      page: 1, pageSize: 10000,
+      keyword: nucleiTemplateFilter.keyword, severity: nucleiTemplateFilter.severity,
+      category: nucleiTemplateFilter.category, tag: nucleiTemplateFilter.tag
+    })
+    if(res.code === 0 && res.data && res.data.list) {
+      res.data.list.forEach(row => {
+        if (!selectedNucleiTemplates.value.find(s => s.id === row.id)) {
+          selectedNucleiTemplates.value.push(row)
+        }
+      })
+      updateNucleiTemplateIdsFromSelection()
+      loadNucleiTemplatesForSelect()
+    }
+  } finally { selectAllNucleiLoading.value = false }
+}
+
+function deselectAllNucleiTemplates() {
+  selectedNucleiTemplates.value = []
+  updateNucleiTemplateIdsFromSelection()
+  if (nucleiTableRef.value) nucleiTableRef.value.clearSelection()
+}
+
+async function selectAllCustomPocs() {
+  selectAllCustomLoading.value = true
+  try {
+    const res = await getCustomPocList({
+      page: 1, pageSize: 10000,
+      name: customPocFilter.name, severity: customPocFilter.severity, tag: customPocFilter.tag
+    })
+    if(res.code === 0 && res.data && res.data.list) {
+      res.data.list.forEach(row => {
+         if (!selectedCustomPocs.value.find(s => s.id === row.id)) {
+           selectedCustomPocs.value.push(row)
+         }
+      })
+      updateCustomPocIdsFromSelection()
+      loadCustomPocsForSelect()
+    }
+  } finally { selectAllCustomLoading.value = false }
+}
+
+function deselectAllCustomPocs() {
+  selectedCustomPocs.value = []
+  updateCustomPocIdsFromSelection()
+  if (customPocTableRef.value) customPocTableRef.value.clearSelection()
+}
+
+function clearAllSelections() {
+  selectedNucleiTemplates.value = []
+  selectedCustomPocs.value = []
+  form.pocscanNucleiTemplateIds = []
+  form.pocscanCustomPocIds = []
+  if (nucleiTableRef.value) nucleiTableRef.value.clearSelection()
+  if (customPocTableRef.value) customPocTableRef.value.clearSelection()
+}
+
+function clearNucleiSelections() {
+  selectedNucleiTemplates.value = []
+  form.pocscanNucleiTemplateIds = []
+  if (nucleiTableRef.value) nucleiTableRef.value.clearSelection()
+}
+
+function clearCustomPocSelections() {
+  selectedCustomPocs.value = []
+  form.pocscanCustomPocIds = []
+  if (customPocTableRef.value) customPocTableRef.value.clearSelection()
+}
+
+function updateNucleiTemplateIdsFromSelection() {
+  form.pocscanNucleiTemplateIds = selectedNucleiTemplates.value.map(i => i.id)
+}
+function updateCustomPocIdsFromSelection() {
+  form.pocscanCustomPocIds = selectedCustomPocs.value.map(i => i.id)
+}
+
+function getSeverityType(severity) {
+  const map = { critical: 'danger', high: 'warning', medium: 'primary', low: 'info', info: 'info', unknown: 'info' }
+  return map[severity?.toLowerCase()] || 'info'
+}
+
+function disabledDate(time) { return time.getTime() < Date.now() - 86400000 }
+function onScheduleTimeChange(val) { form.scheduleTime = val }
+function handlePocModeChange(val) {
+  if (val !== 'manual') {
+    form.pocscanNucleiTemplateIds = []
+    form.pocscanCustomPocIds = []
+    selectedNucleiTemplates.value = []
+    selectedCustomPocs.value = []
+  }
+}
+
+watch(() => pocSelectTab.value, (newVal) => {
+  if (newVal === 'nuclei' && nucleiTemplateList.value.length === 0) {
+    loadNucleiTemplatesForSelect()
+  } else if (newVal === 'custom' && customPocList.value.length === 0) {
+    loadCustomPocsForSelect()
+  }
+})
+
+const multipleSelection = ref([])
+function handleCronSelectionChange(val) {
+  multipleSelection.value = val
+}
+
+function handleBatchDelete() {
+  if (!multipleSelection.value.length) return
+  ElMessageBox.confirm('确定要删除选中的定时任务吗？', '提示', { type: 'warning' }).then(async () => {
+    const res = await batchDeleteCronTask({ ids: multipleSelection.value.map(item => item.id) })
+    if (res.code === 0) {
+      ElMessage.success('删除成功')
+      loadData()
+    } else {
+      ElMessage.error(res.msg || '删除失败')
+    }
+  }).catch(() => {})
+}
+
+// 状态切换
+async function handleToggle(row) {
+  try {
+    const res = await toggleCronTask({ id: row.id, status: row.status })
+    if (res.code === 0) {
+      ElMessage.success('状态已更新')
+      loadData()
+    } else {
+      row.status = row.status === 'enable' ? 'disable' : 'enable'
+      ElMessage.error(res.msg || '更新失败')
+    }
+  } catch (err) {
+    row.status = row.status === 'enable' ? 'disable' : 'enable'
+  }
+}
+
+// 立即执行
+async function handleRunNow(row) {
+  try {
+    await ElMessageBox.confirm('确定要立即执行该定时任务吗？', '提示', { type: 'warning' })
+    const res = await runCronTaskNow({ id: row.id })
+    if (res.code === 0) {
+      ElMessage.success('已触发执行')
+      loadData()
+    } else {
+      ElMessage.error(res.msg || '触发失败')
+    }
+  } catch {}
+}
+
+function handleEdit(row) {
+  isEdit.value = true
+  dialogVisible.value = true
+  Object.assign(form, row)
+  if (row.config) {
+    try {
+      const configObj = JSON.parse(row.config)
+      Object.assign(form, configObj)
+    } catch (e) {
+      console.error('解析配置失败', e)
+    }
+  }
+}
+
+function handleDelete(row) {
+  ElMessageBox.confirm('确定要删除该定时任务吗？', '提示', { type: 'warning' }).then(async () => {
+    const res = await deleteCronTask({ id: row.id })
+    if (res.code === 0) {
+      ElMessage.success('删除成功')
+      loadData()
+    } else {
+      ElMessage.error(res.msg || '删除失败')
+    }
+  }).catch(() => {})
+}
+
+function goToTask(row) {
+  router.push({ name: 'Task', query: { keyword: row.taskName } })
+}
+
+function showDictSelectDialog() {
+  dictSelectDialogVisible.value = true
+}
+
+function showSubdomainDictSelectDialog() {
+  subdomainDictSelectDialogVisible.value = true
+}
+
+function showRecursiveDictSelectDialog() {
+  recursiveDictSelectDialogVisible.value = true
+}
+
+function showPocSelectDialog() {
+  pocSelectDialogVisible.value = true
+}
+
+
+
+function confirmDictSelection() {
+  if (!form.dirscanDicts) form.dirscanDicts = []
+  form.dirscanDicts = [...selectedDictRows.value]
+  form.dirscanDictIds = selectedDictRows.value.map(item => item.id)
+  dictSelectDialogVisible.value = false
+}
+
+function confirmSubdomainDictSelection() {
+  if (!form.subdomainDicts) form.subdomainDicts = []
+  form.subdomainDicts = [...selectedSubdomainDictRows.value]
+  form.subdomainDictIds = selectedSubdomainDictRows.value.map(item => item.id)
+  subdomainDictSelectDialogVisible.value = false
+}
+
+function confirmRecursiveDictSelection() {
+  if (!form.recursiveDicts) form.recursiveDicts = []
+  form.recursiveDicts = [...selectedRecursiveDictRows.value]
+  form.recursiveDictIds = selectedRecursiveDictRows.value.map(item => item.id)
+  recursiveDictSelectDialogVisible.value = false
+}
+
+function confirmPocSelection() {
+  if (currentPocSelectType.value === 'nuclei_template') {
+    selectedNucleiTemplates.value = [...selectedPocRows.value]
+    form.pocscanNucleiTemplateIds = selectedPocRows.value.map(item => item.id)
+  } else if (currentPocSelectType.value === 'custom_poc') {
+    selectedCustomPocs.value = [...selectedPocRows.value]
+    form.pocscanCustomPocIds = selectedPocRows.value.map(item => item.id)
+  }
+  pocDialogVisible.value = false
+}
+
+function removeDict(index) {
+  if (form.subdomainDicts) form.subdomainDicts.splice(index, 1)
+  if (form.subdomainDictIds) form.subdomainDictIds.splice(index, 1)
+}
+
+function removeRecursiveDict(index) {
+  if (form.recursiveDicts) form.recursiveDicts.splice(index, 1)
+  if (form.recursiveDictIds) form.recursiveDictIds.splice(index, 1)
+}
+
+function removeNucleiTemplate(id) {
+  const idx = selectedNucleiTemplates.value.findIndex(item => item.id === id)
+  if (idx > -1) selectedNucleiTemplates.value.splice(idx, 1)
+  const idIdx = form.pocscanNucleiTemplateIds.indexOf(id)
+  if (idIdx > -1) form.pocscanNucleiTemplates.splice(idIdx, 1)
+}
+
+function removeCustomPoc(id) {
+  const idx = selectedCustomPocs.value.findIndex(item => item.id === id)
+  if (idx > -1) selectedCustomPocs.value.splice(idx, 1)
+  const idIdx = form.pocscanCustomPocIds.indexOf(id)
+  if (idIdx > -1) form.pocscanCustomPocs.splice(idIdx, 1)
+}
+
+function viewPocContent(row, type) {
+  currentViewPoc.value = { name: row.name, content: row.content || "Content preview not loaded." }
+  pocContentDialogVisible.value = true
+}
+
+function copyPocContent() { 
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(currentViewPoc.value.content)
+  }
+}
+
 
 // 加载任务列表（只加载已创建状态的任务作为模板）
 async function loadTaskList() {
@@ -1331,173 +1821,112 @@ function truncateTarget(target, maxLen = 40) {
 // 显示创建对话框
 function showCreateDialog() {
   isEdit.value = false
+  dialogVisible.value = true
   Object.assign(form, {
-
-    batchSize: config.batchSize || 50,
-    // 子域名扫描
-    domainscanEnable: config.domainscan?.enable ?? false,
-    domainscanSubfinder: config.domainscan?.subfinder ?? true,
-    domainscanBruteforce: hasBruteforce,
-    domainscanBruteforceTimeout: config.domainscan?.bruteforceTimeout || 30,
-    domainscanTimeout: config.domainscan?.timeout || 300,
-    domainscanMaxEnumTime: config.domainscan?.maxEnumerationTime || 10,
-    domainscanThreads: config.domainscan?.threads || 10,
-    domainscanRateLimit: config.domainscan?.rateLimit || 0,
-    domainscanRemoveWildcard: config.domainscan?.removeWildcard ?? true,
-    domainscanResolveDNS: config.domainscan?.resolveDNS ?? true,
-    domainscanConcurrent: config.domainscan?.concurrent || 50,
-    subdomainDictIds: config.domainscan?.subdomainDictIds || [],
-    // KSubdomain增强功能
-    domainscanRecursiveBrute: config.domainscan?.recursiveBrute ?? false,
-    recursiveDictIds: config.domainscan?.recursiveDictIds || [],
-    domainscanWildcardDetect: config.domainscan?.wildcardDetect ?? true,
-    // 端口扫描
-    portscanEnable: config.portscan?.enable ?? true,
-    portscanTool: config.portscan?.tool || 'naabu',
-    portscanRate: config.portscan?.rate || 1000,
-    ports: config.portscan?.ports || 'top100',
-    portThreshold: config.portscan?.portThreshold || 100,
-    scanType: config.portscan?.scanType || 'c',
-    portscanTimeout: config.portscan?.timeout || 60,
-    skipHostDiscovery: config.portscan?.skipHostDiscovery ?? false,
-    excludeCDN: config.portscan?.excludeCDN ?? false,
-    excludeHosts: config.portscan?.excludeHosts || '',
-    // 端口识别
-    portidentifyEnable: config.portidentify?.enable ?? false,
-    portidentifyTool: config.portidentify?.tool || 'nmap',
-    portidentifyTimeout: config.portidentify?.timeout || 30,
-    portidentifyConcurrency: config.portidentify?.concurrency || 10,
-    portidentifyArgs: config.portidentify?.args || '',
-    portidentifyUDP: config.portidentify?.udp ?? false,
-    portidentifyFastMode: config.portidentify?.fastMode ?? false,
-    // 指纹识别
-    fingerprintEnable: config.fingerprint?.enable ?? true,
-    fingerprintTool: config.fingerprint?.tool || (config.fingerprint?.httpx ? 'httpx' : 'builtin'),
-    fingerprintIconHash: config.fingerprint?.iconHash ?? true,
-    fingerprintCustomEngine: config.fingerprint?.customEngine ?? false,
-    fingerprintScreenshot: config.fingerprint?.screenshot ?? false,
-    fingerprintActiveScan: config.fingerprint?.activeScan ?? false,
-    fingerprintActiveTimeout: config.fingerprint?.activeTimeout || 10,
-    fingerprintTimeout: config.fingerprint?.targetTimeout || 90,
-    fingerprintFilterMode: config.fingerprint?.filterMode || 'http_mapping',
-    // 漏洞扫描
-    pocscanEnable: config.pocscan?.enable ?? false,
-    pocscanMode: isManualMode ? 'manual' : 'auto',
-    pocscanAutoScan: config.pocscan?.autoScan ?? true,
-    pocscanAutomaticScan: config.pocscan?.automaticScan ?? true,
-    pocscanCustomOnly: config.pocscan?.customPocOnly ?? false,
-    pocscanSeverity: config.pocscan?.severity ? config.pocscan.severity.split(',') : ['critical', 'high', 'medium'],
-    pocscanTargetTimeout: config.pocscan?.targetTimeout || 600,
-    pocscanRateLimit: config.pocscan?.rateLimit || 800,
-    pocscanConcurrency: config.pocscan?.concurrency || 80,
-    pocscanNucleiTemplateIds: config.pocscan?.nucleiTemplateIds || [],
-    pocscanCustomPocIds: config.pocscan?.customPocIds || [],
-    ...parseCustomHeaders(config.pocscan?.customHeaders),
-    // 目录扫描
-    dirscanEnable: config.dirscan?.enable ?? false,
-    dirscanDictIds: config.dirscan?.dictIds || [],
-    dirscanThreads: config.dirscan?.threads || 50,
-    dirscanTimeout: config.dirscan?.timeout || 10,
-    dirscanFollowRedirect: config.dirscan?.followRedirect ?? false
-  
-  })
-}
-
-// 重置扫描配置为默认值
-function resetScanConfig() {
+    id: '',
+    name: '',
+    scheduleType: 'cron',
+    cronSpec: '0 0 2 * * *',
+    scheduleTime: '',
+    scheduleTimeDate: null,
+    mainTaskId: '',
+    target: '',
+    config: '',
+    batchSize: 50,
   // 子域名扫描
-  form.domainscanEnable = false
-  form.domainscanSubfinder = true
-  form.domainscanBruteforce = false, // 字典爆破
-  form.domainscanBruteforceTimeout = 30, // KSubdomain 超时时间（分钟）
-  form.domainscanTimeout = 300
-  form.domainscanMaxEnumTime = 10
-  form.domainscanThreads = 10
-  form.domainscanRateLimit = 0
-  form.domainscanRemoveWildcard = true
-  form.domainscanResolveDNS = true
-  form.domainscanConcurrent = 50
-  form.subdomainDictIds = [], // 子域名暴力破解字典
-  form.subdomainDicts = [], // 保存已选择的字典信息
+  domainscanEnable: false,
+  domainscanSubfinder: true,
+  domainscanBruteforce: false, // 字典爆破
+  domainscanBruteforceTimeout: 30, // KSubdomain 超时时间（分钟）
+  domainscanTimeout: 300,
+  domainscanMaxEnumTime: 10,
+  domainscanThreads: 10,
+  domainscanRateLimit: 0,
+  domainscanRemoveWildcard: true,
+  domainscanResolveDNS: true,
+  domainscanConcurrent: 50,
+  subdomainDictIds: [], // 子域名暴力破解字典
+  subdomainDicts: [], // 保存已选择的字典信息
   // KSubdomain增强功能
-  form.domainscanRecursiveBrute = false, // 递归爆破
-  form.recursiveDictIds = [], // 递归爆破字典ID列表
-  form.recursiveDicts = [], // 保存已选择的递归字典信息
-  form.domainscanWildcardDetect = true,  // 泛解析检测
+  domainscanRecursiveBrute: false, // 递归爆破
+  recursiveDictIds: [], // 递归爆破字典ID列表
+  recursiveDicts: [], // 保存已选择的递归字典信息
+  domainscanWildcardDetect: true,  // 泛解析检测
       // 端口扫描
-  form.portscanEnable = true
-  form.portscanTool = 'naabu'
-  form.portscanRate = 3000, // 提高默认值从1000到3000
-  form.ports = 'top100'
-  form.portThreshold = 100
-  form.scanType = 'c'
-  form.portscanTimeout = 60
-  form.skipHostDiscovery = false
-  form.excludeCDN = false
-  form.excludeHosts = ''
-  form.portscanWorkers = 50, // Naabu内部工作线程，默认50
-  form.portscanRetries = 2, // 重试次数，默认2
-  form.portscanWarmUpTime = 1, // 预热时间(秒)，默认1
-  form.portscanVerify = false, // TCP验证，默认false
+  portscanEnable: true,
+  portscanTool: 'naabu',
+  portscanRate: 3000, // 提高默认值从1000到3000
+  ports: 'top100',
+  portThreshold: 100,
+  scanType: 'c',
+  portscanTimeout: 60,
+  skipHostDiscovery: false,
+  excludeCDN: false,
+  excludeHosts: '',
+  portscanWorkers: 50, // Naabu内部工作线程，默认50
+  portscanRetries: 2, // 重试次数，默认2
+  portscanWarmUpTime: 1, // 预热时间(秒)，默认1
+  portscanVerify: false, // TCP验证，默认false
   // 端口识别
-  form.portidentifyEnable = false
-  form.portidentifyTool = 'nmap'
-  form.portidentifyTimeout = 30
-  form.portidentifyConcurrency = 10
-  form.portidentifyArgs = ''
-  form.portidentifyUDP = false
-  form.portidentifyFastMode = false
-  form.portidentifyForceScan = false
+  portidentifyEnable: false,
+  portidentifyTool: 'nmap',
+  portidentifyTimeout: 30,
+  portidentifyConcurrency: 10,
+  portidentifyArgs: '',
+  portidentifyUDP: false,
+  portidentifyFastMode: false,
+  portidentifyForceScan: false,
   // 指纹识别
-  form.fingerprintEnable = true
-  form.fingerprintTool = 'httpx'
-  form.fingerprintIconHash = true
-  form.fingerprintCustomEngine = false
-  form.fingerprintScreenshot = false
-  form.fingerprintActiveScan = false
-  form.fingerprintActiveTimeout = 10
-  form.fingerprintTimeout = 90
-  form.fingerprintFilterMode = 'http_mapping', // 过滤模式: http_mapping(HTTP映射) 或 service_mapping(服务映射)
-  form.fingerprintForceScan = false
+  fingerprintEnable: true,
+  fingerprintTool: 'httpx',
+  fingerprintIconHash: true,
+  fingerprintCustomEngine: false,
+  fingerprintScreenshot: false,
+  fingerprintActiveScan: false,
+  fingerprintActiveTimeout: 10,
+  fingerprintTimeout: 90,
+  fingerprintFilterMode: 'http_mapping', // 过滤模式: http_mapping(HTTP映射) 或 service_mapping(服务映射)
+  fingerprintForceScan: false,
   // 漏洞扫描
-  form.pocscanEnable = false
-  form.pocscanMode = 'auto'
-  form.pocscanAutoScan = true
-  form.pocscanAutomaticScan = true
-  form.pocscanCustomOnly = false
-  form.pocscanSeverity = ['critical', 'high', 'medium']
-  form.pocscanTargetTimeout = 600
-  form.pocscanRateLimit = 800
-  form.pocscanConcurrency = 80
-  form.pocscanForceScan = false
-  form.pocscanNucleiTemplateIds = []
-  form.pocscanCustomPocIds = []
+  pocscanEnable: false,
+  pocscanMode: 'auto',
+  pocscanAutoScan: true,
+  pocscanAutomaticScan: true,
+  pocscanCustomOnly: false,
+  pocscanSeverity: ['critical', 'high', 'medium'],
+  pocscanTargetTimeout: 600,
+  pocscanRateLimit: 800,
+  pocscanConcurrency: 80,
+  pocscanForceScan: false,
+  pocscanNucleiTemplateIds: [],
+  pocscanCustomPocIds: [],
   // 自定义HTTP头部
-  form.pocscanHeaderMode = 'none', // none / preset / custom
-  form.pocscanPresetUA = ''
-  form.pocscanCustomHeadersText = ''
+  pocscanHeaderMode: 'none', // none / preset / custom
+  pocscanPresetUA: '',
+  pocscanCustomHeadersText: '',
   // 保存已选择的对象信息（用于显示名称）
-  form.pocscanNucleiTemplates = []
-  form.pocscanCustomPocs = []
+  pocscanNucleiTemplates: [],
+  pocscanCustomPocs: [],
   // 目录扫描
-  form.dirscanEnable = false
-  form.dirscanDictIds = []
-  form.dirscanDicts = [], // 保存已选择的字典信息
-  form.dirscanThreads = 50
-  form.dirscanTimeout = 10
-  form.dirscanFollowRedirect = false
-  form.dirscanForceScan = false
+  dirscanEnable: false,
+  dirscanDictIds: [],
+  dirscanDicts: [], // 保存已选择的字典信息
+  dirscanThreads: 50,
+  dirscanTimeout: 10,
+  dirscanFollowRedirect: false,
+  dirscanForceScan: false,
   // ffuf 高级配置
-  form.dirscanAutoCalibration = true
-  form.dirscanFilterSize = ''
-  form.dirscanFilterWords = ''
-  form.dirscanFilterLines = ''
-  form.dirscanFilterRegex = ''
-  form.dirscanMatcherMode = 'or'
-  form.dirscanFilterMode = 'or'
-  form.dirscanRate = 0
-  form.dirscanRecursion = false
+  dirscanAutoCalibration: true,
+  dirscanFilterSize: '',
+  dirscanFilterWords: '',
+  dirscanFilterLines: '',
+  dirscanFilterRegex: '',
+  dirscanMatcherMode: 'or',
+  dirscanFilterMode: 'or',
+  dirscanRate: 0,
+  dirscanRecursion: false,
   dirscanRecursionDepth: 2
+  })
   selectedNucleiTemplates.value = []
   selectedCustomPocs.value = []
 
@@ -1505,6 +1934,7 @@ function resetScanConfig() {
 
 onMounted(() => {
   loadData()
+  loadTaskList()
 })
 </script>
 

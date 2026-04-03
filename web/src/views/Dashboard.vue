@@ -94,7 +94,7 @@
       </div>
 
       <!-- 目录扫描 / 敏感文件 -->
-      <div class="stat-card dir-card" @click="$router.push('/dirscan')">
+      <div class="stat-card dir-card" @click="goAsset('dirscan')">
         <div class="card-glow"></div>
         <div class="card-content">
           <div class="card-header">

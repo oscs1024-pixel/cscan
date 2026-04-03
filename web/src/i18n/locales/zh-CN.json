@@ -27,6 +27,7 @@
     "allWorkspaces": "全部空间",
     "refresh": "刷新",
     "export": "导出",
+    "exportSelected": "导出选中项",
     "import": "导入",
     "view": "查看",
     "detail": "详情",
@@ -56,8 +57,6 @@
     "updateSuccess": "更新成功",
     "deleteSuccess": "删除成功",
     "deleteFailed": "删除失败",
-    "saveSuccess": "保存成功",
-    "exportSuccess": "导出成功",
     "operationSuccess": "操作成功",
     "operationFailed": "操作失败",
     "statusUpdateSuccess": "状态更新成功",
@@ -75,7 +74,9 @@
     "yes": "是",
     "no": "否",
     "exportCsv": "导出CSV(全部字段)",
-    "switchingWorkspace": "正在切换工作空间..."
+    "switchingWorkspace": "正在切换工作空间...",
+    "saveSuccess": "保存成功",
+    "exportSuccess": "导出成功"
   },
   "navigation": {
     "dashboard": "工作台",
@@ -971,6 +972,7 @@
     "noTemplatesInZip": "ZIP包中未找到模板文件",
     "zipParseFailed": "解析ZIP文件失败",
     "startImport": "开始导入",
+    "done": "完成",
     "extracting": "正在解析模板...",
     "processing": "处理中",
     "networkNotice": "网络提示",

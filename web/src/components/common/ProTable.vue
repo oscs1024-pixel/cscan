@@ -180,7 +180,7 @@
 import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Filter } from '@element-plus/icons-vue'
+import { ArrowDown, Filter, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import request from '@/api/request'
 import { debounce } from 'lodash-es'

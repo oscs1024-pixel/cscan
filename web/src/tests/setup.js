@@ -73,3 +73,11 @@ vi.mock('axios', () => {
     }
   }
 })
+// Suppress Happy-DOM image lazy-loading warnings
+const originalConsoleWarn = console.warn;
+console.warn = function (...args) {
+  if (args[0] && typeof args[0] === 'string' && args[0].includes('Images loaded lazily and replaced with placeholders')) {
+    return;
+  }
+  originalConsoleWarn.apply(console, args);
+};

@@ -99,6 +99,7 @@
             :preview-src-list="[getScreenshotUrl(item.screenshot)]"
             fit="cover"
             class="image"
+            lazy
           >
             <template #error>
               <div class="image-slot">

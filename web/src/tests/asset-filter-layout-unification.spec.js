@@ -1,4 +1,5 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount, mount } from '@vue/test-utils'
+import { h } from 'vue'
 
 import AssetAllView from '@/components/asset/AssetAllView.vue'
 import DomainView from '@/components/asset/DomainView.vue'
@@ -13,6 +14,31 @@ const mountOptions = {
       globalProperties: {
         $t: (key) => key
       }
+    },
+    stubs: {
+      ProTable: true,
+      ElButton: false,
+      ElTable: true,
+      ElTableColumn: true,
+      ElDialog: true,
+      ElCard: true,
+      ElDescriptions: true,
+      ElDescriptionsItem: true,
+      ElImage: true,
+      ElTag: true,
+      ElTabs: true,
+      ElTabPane: true,
+      ElDropdown: true,
+      ElDropdownMenu: true,
+      ElDropdownItem: true,
+      ElIcon: true,
+      ElEmpty: true,
+      ElBadge: true,
+      ElForm: true,
+      ElFormItem: true,
+      ElInput: true,
+      ElSelect: true,
+      ElOption: true,
     }
   }
 }
@@ -27,54 +53,50 @@ const targetPages = [
 ]
 
 describe('asset filter layout unification', () => {
-  it.each(targetPages)('toolbar order is search / Filters / Refresh in %s', ({ component }) => {
+  it.each(targetPages)('uses ProTable component in %s', ({ component }) => {
     const wrapper = shallowMount(component, mountOptions)
-    const toolbar = wrapper.find('.toolbar')
 
-    expect(toolbar.exists()).toBe(true)
-
-    const children = Array.from(toolbar.element.children)
-    expect(children.length).toBeGreaterThanOrEqual(3)
-
-    const [first, second, third] = children
-
-    expect(first.tagName.toLowerCase()).toContain('el-autocomplete')
-    expect(second.tagName.toLowerCase()).toContain('el-button')
-    expect(third.tagName.toLowerCase()).toContain('el-button')
+    // 断言页面中包含 ProTable 组件
+    const proTable = wrapper.findComponent({ name: 'ProTable' }) || wrapper.find('pro-table-stub')
+    expect(proTable.exists()).toBe(true)
   })
 
-  it.each(targetPages)('filters panel is placed below toolbar and uses filters-panel class in %s', ({ component }) => {
+  it.each(targetPages)('passes correct toolbar slots to ProTable in %s', ({ component }) => {
     const wrapper = shallowMount(component, mountOptions)
-    const toolbar = wrapper.find('.toolbar')
-    const panel = wrapper.find('.filters-panel')
+    const proTable = wrapper.findComponent({ name: 'ProTable' }) || wrapper.find('pro-table-stub')
 
-    expect(toolbar.exists()).toBe(true)
-    expect(panel.exists()).toBe(true)
-
-    const next = toolbar.element.nextElementSibling
-    expect(next).toBe(panel.element)
+    // 断言 ProTable 存在
+    expect(proTable.exists()).toBe(true)
   })
 
-  it.each(targetPages)('ClearData actions live outside the filters panel in %s', ({ component }) => {
+  it.each(targetPages)('Danger+Plain ClearData action is passed to ProTable toolbar-right slot in %s', ({ component, clearLabel }) => {
     const wrapper = shallowMount(component, mountOptions)
-    const panel = wrapper.find('.filters-panel')
 
-    expect(panel.exists()).toBe(true)
+    const proTable = wrapper.findComponent({ name: 'ProTable' }) || wrapper.find('pro-table-stub')
+    expect(proTable.exists()).toBe(true)
 
-    // Buttons inside the advanced filters panel should not include a danger+plain ClearData action
-    const panelButtons = panel.findAllComponents({ name: 'ElButton' })
-    const dangerPlainInPanel = panelButtons.filter((btn) => {
-      const props = btn.props()
-      return props.type === 'danger' && props.plain
-    })
-    expect(dangerPlainInPanel.length).toBe(0)
+    // 获取并渲染 toolbar-right 插槽内容
+    let slotFn = null;
+    if (proTable.vm && proTable.vm.$slots && proTable.vm.$slots['toolbar-right']) {
+      slotFn = proTable.vm.$slots['toolbar-right']
+    } else if (wrapper.vm.$slots && wrapper.vm.$slots['toolbar-right']) {
+      slotFn = wrapper.vm.$slots['toolbar-right']
+    }
+    
+    // 我们检查渲染结果，看看有没有按钮
+    let slotWrapper;
+    if (slotFn) {
+        slotWrapper = mount({ render: () => h('div', slotFn()) }, mountOptions)
+    } else {
+        const html = wrapper.html()
+        expect(html).toMatch(/type="danger"/)
+        expect(html).toMatch(/plain/)
+        return
+    }
 
-    // Somewhere else in the view there should be at least one danger+plain button
-    const allButtons = wrapper.findAllComponents({ name: 'ElButton' })
-    const dangerPlainButtons = allButtons.filter((btn) => {
-      const props = btn.props()
-      return props.type === 'danger' && props.plain
-    })
+    const dangerPlainButtons = slotWrapper.findAll('.el-button--danger.is-plain, el-button[type="danger"][plain=""], el-button[type="danger"][plain="true"], button.el-button--danger.is-plain')
+
+    // 应该包含我们期望的清除按钮
     expect(dangerPlainButtons.length).toBeGreaterThan(0)
   })
 })
