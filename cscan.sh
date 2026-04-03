@@ -405,10 +405,12 @@ uninstall_cscan() {
         # 仅删除容器
         info "正在停止并删除容器..."
         $COMPOSE_CMD down || warning "停止容器失败"
+        $COMPOSE_CMD -f docker-compose-worker.yaml down 2>/dev/null || true
     else
         # 删除容器和数据卷
         info "正在停止并删除容器及数据卷..."
         $COMPOSE_CMD down -v || warning "停止容器失败"
+        $COMPOSE_CMD -f docker-compose-worker.yaml down -v 2>/dev/null || true
     fi
 
     if confirm "是否删除镜像?"; then
@@ -416,6 +418,7 @@ uninstall_cscan() {
         for service in "${SERVICES[@]}"; do
             docker rmi "registry.cn-hangzhou.aliyuncs.com/txf7/${service}:latest" 2>/dev/null
         done
+        docker rmi "registry.cn-hangzhou.aliyuncs.com/txf7/cscan-worker:latest" 2>/dev/null
         docker rmi "docker.1ms.run/redis:7-alpine" 2>/dev/null
         docker rmi "docker.1ms.run/mongo:6" 2>/dev/null
     fi
