@@ -1302,6 +1302,12 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 			w.taskLog(task.TaskId, LevelInfo, "Subfinder disabled, skipping passive enumeration")
 		}
 
+		// Subfinder 完成后立即保存，避免后续超时导致结果丢失
+		if len(subfinderAssets) > 0 {
+			w.taskLog(task.TaskId, LevelInfo, "Saving %d subfinder subdomains to database immediately", len(subfinderAssets))
+			w.saveAssetResult(ctx, task.WorkspaceId, task.MainTaskId, orgId, subfinderAssets)
+		}
+
 		// 执行子域名暴力破解（如果配置了字典）
 		var bruteforceAssets []*scanner.Asset
 		if len(config.DomainScan.SubdomainDictIds) > 0 {
@@ -1447,20 +1453,33 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 		select {
 		case <-ctx.Done():
 			w.taskLog(task.TaskId, LevelInfo, "Domain scan cancelled by context")
-			// 保存已发现的子域名资产
-			if len(mergedAssets) > 0 {
-				allAssets = append(allAssets, mergedAssets...)
-			}
+			// 资产已在各阶段完成后立即保存，此处只需保存任务进度
 			w.saveTaskProgress(ctx, task, completedPhases, allAssets)
 			return
 		default:
 		}
 
-		if len(mergedAssets) > 0 {
-			// 保存子域名扫描结果到数据库
-			w.taskLog(task.TaskId, LevelInfo, "Saving %d subdomains to database", len(mergedAssets))
-			w.saveAssetResult(ctx, task.WorkspaceId, task.MainTaskId, orgId, mergedAssets)
+		// 只保存暴力破解新发现的增量资产（subfinder 的已在前面立即保存过）
+		if len(bruteforceAssets) > 0 {
+			subfinderHosts := make(map[string]bool)
+			for _, asset := range subfinderAssets {
+				if asset.Host != "" {
+					subfinderHosts[asset.Host] = true
+				}
+			}
+			var newBruteAssets []*scanner.Asset
+			for _, asset := range bruteforceAssets {
+				if asset.Host != "" && !subfinderHosts[asset.Host] {
+					newBruteAssets = append(newBruteAssets, asset)
+				}
+			}
+			if len(newBruteAssets) > 0 {
+				w.taskLog(task.TaskId, LevelInfo, "Saving %d bruteforce subdomains to database", len(newBruteAssets))
+				w.saveAssetResult(ctx, task.WorkspaceId, task.MainTaskId, orgId, newBruteAssets)
+			}
+		}
 
+		if len(mergedAssets) > 0 {
 			// 将发现的子域名添加到目标列表
 			var newTargets []string
 			for _, asset := range mergedAssets {
@@ -1491,15 +1510,28 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 		// 更新当前阶段
 		w.updateTaskProgressWithPhase(ctx, task.TaskId, 20, "端口扫描中", "端口扫描")
 
-		// 创建带超时的上下文，防止端口扫描卡死
-		portScanTimeout := 600 // 默认10分钟总超时
-		if config.PortScan != nil && config.PortScan.Timeout > 0 {
-			// 根据单个端口超时计算总超时（至少10分钟）
-			portScanTimeout = config.PortScan.Timeout * 100
-			if portScanTimeout < 600 {
-				portScanTimeout = 600
-			}
+		// 使用 Worker 并发数覆盖 Naabu Workers
+		if config.PortScan.Workers <= 0 || config.PortScan.Workers > w.config.Concurrency {
+			config.PortScan.Workers = w.config.Concurrency
 		}
+
+		// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+		singleTimeout := config.PortScan.Timeout
+		if singleTimeout <= 0 {
+			singleTimeout = 5
+		}
+		portConcurrency := config.PortScan.Workers
+		if portConcurrency <= 0 {
+			portConcurrency = 1
+		}
+		// 粗略估算目标数（按换行分割）
+		portTargetCount := len(strings.Split(strings.TrimSpace(target), "\n"))
+		portScanTimeout := singleTimeout * portTargetCount / portConcurrency
+		if portScanTimeout < 60 {
+			portScanTimeout = 60
+		}
+		w.taskLog(task.TaskId, LevelInfo, "Port scan: timeout=%ds (single=%ds, targets=%d, concurrency=%d)",
+			portScanTimeout, singleTimeout, portTargetCount, portConcurrency)
 		portCtx, portCancel := context.WithTimeout(ctx, time.Duration(portScanTimeout)*time.Second)
 
 		// 根据配置选择端口发现工具（默认使用Naabu)
@@ -1736,11 +1768,17 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 					w.loadCustomFingerprints(ctx, s.(*scanner.FingerprintScanner), config.Fingerprint.ActiveScan)
 				}
 
-				// 创建带超时的上下文，防止指纹识别卡死
-				fingerprintTimeout := config.Fingerprint.Timeout
-				if fingerprintTimeout <= 0 {
-					fingerprintTimeout = 300 // 默认5分钟总超时
+				// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+				fpConcurrency := config.Fingerprint.Concurrency
+				if fpConcurrency <= 0 {
+					fpConcurrency = 1
 				}
+				fingerprintTimeout := targetTimeout * len(assetsToScan) / fpConcurrency
+				if fingerprintTimeout < 60 {
+					fingerprintTimeout = 60
+				}
+				w.taskLog(task.TaskId, LevelInfo, "Fingerprint: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
+					fingerprintTimeout, targetTimeout, len(assetsToScan), fpConcurrency)
 				fpCtx, fpCancel := context.WithTimeout(ctx, time.Duration(fingerprintTimeout)*time.Second)
 
 				// 创建任务日志回调
@@ -1951,11 +1989,22 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 						targetTimeout = 600 // 默认600秒
 					}
 
-					// 总超时基于目标数量和单目标超时计算，至少10分钟
-					pocTimeout := targetTimeout * len(allAssets)
-					if pocTimeout < 600 {
-						pocTimeout = 600
+					// 使用 Worker 并发数
+					if config.PocScan.Concurrency <= 0 || config.PocScan.Concurrency > w.config.Concurrency {
+						config.PocScan.Concurrency = w.config.Concurrency
 					}
+
+					// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+					pocConcurrency := config.PocScan.Concurrency
+					if pocConcurrency <= 0 {
+						pocConcurrency = 1
+					}
+					pocTimeout := targetTimeout * len(allAssets) / pocConcurrency
+					if pocTimeout < 60 {
+						pocTimeout = 60
+					}
+					w.taskLog(task.TaskId, LevelInfo, "POC scan: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
+						pocTimeout, targetTimeout, len(allAssets), pocConcurrency)
 					pocCtx, pocCancel := context.WithTimeout(ctx, time.Duration(pocTimeout)*time.Second)
 
 					// 启动后台刷新协程
@@ -3518,11 +3567,17 @@ func (w *Worker) executePortIdentifyWithNmap(ctx context.Context, task *schedule
 		hostAssets[asset.Host] = append(hostAssets[asset.Host], asset)
 	}
 
-	// 计算总超时时间
-	totalTimeout := timeout * len(hostPorts)
+	// 计算总超时时间：单主机超时 × 主机数 / 并发数
+	concurrency := config.Concurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	totalTimeout := timeout * len(hostPorts) / concurrency
 	if totalTimeout < 60 {
 		totalTimeout = 60
 	}
+	w.taskLog(task.TaskId, LevelInfo, "Port identify(nmap): timeout=%ds (single=%ds, hosts=%d, concurrency=%d)",
+		totalTimeout, timeout, len(hostPorts), concurrency)
 
 	// 使用分离的 Context 以避免前面模块的超时拖累此独立模块
 	// 同时使用一个 goroutine 定期检查整个任务有没有被用户下发全局 STOP 命令
@@ -3541,14 +3596,10 @@ func (w *Worker) executePortIdentifyWithNmap(ctx context.Context, task *schedule
 	var identifiedAssets []*scanner.Asset
 	nmapScanner := w.scanners["nmap"]
 
-	// 预处理并发配置，只提示一次
-	concurrency := 1
-	if config.Concurrency > 0 {
-		concurrency = config.Concurrency
-		if concurrency > 5 {
-			w.taskLog(task.TaskId, LevelWarn, "Port identify concurrency %d exceeds maximum 5, limiting to 5", concurrency)
-			concurrency = 5
-		}
+	// Nmap 内部并发数（nmap 本身已有并发控制，这里限制同时扫描的端口数）
+	nmapConcurrency := concurrency
+	if nmapConcurrency > 5 {
+		nmapConcurrency = 5
 	}
 
 	for host, ports := range hostPorts {
@@ -3578,7 +3629,7 @@ func (w *Worker) executePortIdentifyWithNmap(ctx context.Context, task *schedule
 		nmapOpts := &scanner.NmapOptions{
 			Ports:      portsStr,
 			Timeout:    timeout,
-			Concurrent: concurrency,
+			Concurrent: nmapConcurrency,
 		}
 		if config.Args != "" {
 			nmapOpts.Args = config.Args
@@ -3637,17 +3688,16 @@ func (w *Worker) executePortIdentifyWithFingerprintx(ctx context.Context, task *
 
 	concurrency := config.Concurrency
 	if concurrency <= 0 {
-		concurrency = 10 // 默认并发10
+		concurrency = 10
 	}
 
-	// 计算总超时时间
-	totalTimeout := timeout * len(assets) * 2 // 指纹需要稍微宽裕些
+	// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+	totalTimeout := timeout * len(assets) / concurrency
 	if totalTimeout < 60 {
 		totalTimeout = 60
 	}
-	if totalTimeout > 1800 {
-		totalTimeout = 1800 // 指纹阶段单批次最高限额30分钟
-	}
+	w.taskLog(task.TaskId, LevelInfo, "Port identify(fingerprintx): timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
+		totalTimeout, timeout, len(assets), concurrency)
 
 	// 同样做防超时继承处理，保证独立阶段时间充足
 	fingerCtx, fingerCancel := context.WithTimeout(context.Background(), time.Duration(totalTimeout)*time.Second)
@@ -3775,10 +3825,10 @@ func (w *Worker) executeDirScan(ctx context.Context, task *scheduler.TaskInfo, a
 		return nil
 	}
 
-	// 构建扫描选项
-	threads := config.Threads
+	// 构建扫描选项，使用 Worker 并发数
+	threads := w.config.Concurrency
 	if threads <= 0 {
-		threads = 50
+		threads = 10
 	}
 	timeout := config.Timeout
 	if timeout <= 0 {
@@ -3803,14 +3853,13 @@ func (w *Worker) executeDirScan(ctx context.Context, task *scheduler.TaskInfo, a
 		RecursionDepth:  config.RecursionDepth,
 	}
 
-	// 计算总超时时间
+	// 按单目标超时计算总超时：单目标超时 × 资产数 × 路径数 / 线程数
 	totalTimeout := timeout * len(httpAssets) * len(allPaths) / threads
 	if totalTimeout < 60 {
 		totalTimeout = 60
 	}
-	if totalTimeout > 3600 {
-		totalTimeout = 3600 // 最大1小时
-	}
+	w.taskLog(task.TaskId, LevelInfo, "Dir scan: total timeout=%ds (single=%ds, assets=%d, paths=%d, threads=%d)",
+		totalTimeout, timeout, len(httpAssets), len(allPaths), threads)
 	dirCtx, dirCancel := context.WithTimeout(ctx, time.Duration(totalTimeout)*time.Second)
 	defer dirCancel()
 
