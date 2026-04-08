@@ -24,7 +24,7 @@
             {{ $t('asset.port') || '端口' }}
           </span>
         </template>
-        <AssetAllView v-if="activeLeftTab === 'port'" />
+        <PortView v-if="activeLeftTab === 'port'" />
       </el-tab-pane>
 
       <!-- 域名 (Domains) -->
@@ -81,6 +81,28 @@
         </template>
         <VulView v-if="activeLeftTab === 'vul'" />
       </el-tab-pane>
+
+      <!-- Icon -->
+      <el-tab-pane name="icon">
+        <template #label>
+          <span class="left-tab-label">
+            <el-icon><Cpu /></el-icon>
+            {{ $t('asset.icon') || 'Icon' }}
+          </span>
+        </template>
+        <IconView v-if="activeLeftTab === 'icon'" />
+      </el-tab-pane>
+
+      <!-- 应用 (App) -->
+      <el-tab-pane name="app">
+        <template #label>
+          <span class="left-tab-label">
+            <el-icon><CopyDocument /></el-icon>
+            {{ $t('asset.app') || '应用' }}
+          </span>
+        </template>
+        <AppView v-if="activeLeftTab === 'app'" />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -90,17 +112,19 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Menu, List, Position, Connection,
-  Monitor, Folder, Warning, Cpu
+  Monitor, Folder, Warning, Cpu, CopyDocument
 } from '@element-plus/icons-vue'
 
 // 导入左侧标签页对应的各个组件
 import AssetInventoryCardView from '@/components/asset/AssetInventoryCardView.vue'
-import AssetAllView from '@/components/asset/AssetAllView.vue'
+import PortView from '@/components/asset/PortView.vue'
 import DomainView from '@/components/asset/DomainView.vue'
 import IPView from '@/components/asset/IPView.vue'
 import SiteView from '@/components/asset/SiteView.vue'
 import DirScanView from '@/components/asset/DirScanView.vue'
 import VulView from '@/components/asset/VulView.vue'
+import IconView from '@/components/asset/IconView.vue'
+import AppView from '@/components/asset/AppView.vue'
 
 const route = useRoute()
 const router = useRouter()
