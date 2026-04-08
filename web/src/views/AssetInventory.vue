@@ -118,7 +118,7 @@
     <div v-if="showFilters" class="advanced-filters">
       <div class="filter-group">
         <label>技术栈</label>
-        <el-select v-model="filters.technologies" multiple placeholder="选择技术" clearable>
+        <el-select v-model="filterDraft.technologies" multiple placeholder="选择技术" clearable>
           <el-option label="Nginx" value="nginx" />
           <el-option label="Apache" value="apache" />
           <el-option label="PHP" value="php" />
@@ -129,7 +129,7 @@
       
       <div class="filter-group">
         <label>端口</label>
-        <el-select v-model="filters.ports" multiple placeholder="选择端口" clearable>
+        <el-select v-model="filterDraft.ports" multiple placeholder="选择端口" clearable>
           <el-option label="80" value="80" />
           <el-option label="443" value="443" />
           <el-option label="22" value="22" />
@@ -140,7 +140,7 @@
       
       <div class="filter-group">
         <label>状态码</label>
-        <el-select v-model="filters.statusCodes" multiple placeholder="选择状态码" clearable>
+        <el-select v-model="filterDraft.statusCodes" multiple placeholder="选择状态码" clearable>
           <el-option label="200" value="200" />
           <el-option label="301" value="301" />
           <el-option label="403" value="403" />
@@ -196,7 +196,28 @@
             <span class="title-text">{{ row.title || '-' }}</span>
           </template>
         </el-table-column>
-        
+
+        <el-table-column label="应用" min-width="150">
+          <template #default="{ row }">
+            <div class="app-tags">
+              <el-tag
+                v-for="(app, index) in (row.apps || []).slice(0, 2)"
+                :key="index"
+                size="small"
+                class="app-tag"
+                type="success"
+                effect="plain"
+              >
+                <el-icon v-if="app.icon" class="app-icon"><component :is="app.icon" /></el-icon>
+                {{ app.name || app }}
+              </el-tag>
+              <el-tag v-if="row.apps && row.apps.length > 2" size="small" type="info">
+                +{{ row.apps.length - 2 }}
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
+
         <el-table-column label="技术栈" min-width="200">
           <template #default="{ row }">
             <div class="tech-tags">
@@ -292,14 +313,23 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const selectedAssets = ref([])
 
-// 过滤器
-const filters = ref({
+// 高级过滤器（暂存，点击"应用"后才生效）
+const filterDraft = ref({
   technologies: [],
   ports: [],
   statusCodes: [],
-  timeRange: 'all',
-  sortBy: 'time'
 })
+
+// 已应用的过滤器（与标签栏隔离）
+const appliedFilters = ref({
+  technologies: [],
+  ports: [],
+  statusCodes: [],
+})
+
+// 排序和时间范围（独立于过滤器）
+const sortBy = ref('time')
+const timeRange = ref('all')
 
 // 模拟资产数据
 const assets = ref([
@@ -341,7 +371,8 @@ const assets = ref([
 // 计算属性
 const filteredAssets = computed(() => {
   let filtered = assets.value
-  
+
+  // 搜索关键词过滤
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     filtered = filtered.filter(asset =>
@@ -350,29 +381,30 @@ const filteredAssets = computed(() => {
       asset.title?.toLowerCase().includes(query)
     )
   }
-  
-  if (filters.value.technologies.length > 0) {
+
+  // 已应用的高级过滤器（与标签栏隔离）
+  if (appliedFilters.value.technologies.length > 0) {
     filtered = filtered.filter(asset =>
       asset.technologies.some(tech =>
-        filters.value.technologies.some(filter =>
+        appliedFilters.value.technologies.some(filter =>
           tech.toLowerCase().includes(filter.toLowerCase())
         )
       )
     )
   }
-  
-  if (filters.value.ports.length > 0) {
+
+  if (appliedFilters.value.ports.length > 0) {
     filtered = filtered.filter(asset =>
-      filters.value.ports.includes(String(asset.port))
+      appliedFilters.value.ports.includes(String(asset.port))
     )
   }
-  
-  if (filters.value.statusCodes.length > 0) {
+
+  if (appliedFilters.value.statusCodes.length > 0) {
     filtered = filtered.filter(asset =>
-      filters.value.statusCodes.includes(asset.status)
+      appliedFilters.value.statusCodes.includes(asset.status)
     )
   }
-  
+
   return filtered
 })
 
@@ -390,28 +422,37 @@ const handleSearch = () => {
 }
 
 const handleSort = (command) => {
-  filters.value.sortBy = command
+  sortBy.value = command
   ElMessage.success(`按${command}排序`)
 }
 
 const handleTimeFilter = (command) => {
-  filters.value.timeRange = command
+  timeRange.value = command
   ElMessage.success(`时间范围: ${command}`)
 }
 
 const applyFilters = () => {
+  // 将暂存的过滤器应用到实际过滤条件
+  appliedFilters.value = {
+    technologies: [...filterDraft.value.technologies],
+    ports: [...filterDraft.value.ports],
+    statusCodes: [...filterDraft.value.statusCodes],
+  }
   currentPage.value = 1
   showFilters.value = false
   ElMessage.success('过滤器已应用')
 }
 
 const resetFilters = () => {
-  filters.value = {
+  filterDraft.value = {
     technologies: [],
     ports: [],
     statusCodes: [],
-    timeRange: 'all',
-    sortBy: 'time'
+  }
+  appliedFilters.value = {
+    technologies: [],
+    ports: [],
+    statusCodes: [],
   }
   currentPage.value = 1
   ElMessage.success('过滤器已重置')
