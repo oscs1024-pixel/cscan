@@ -1450,7 +1450,7 @@ func (l *NucleiTemplateDownloadLogic) downloadTemplatesWithProgress(taskId strin
 	
 	// 如果 SDK 失败，尝试使用 git clone
 	if downloadErr != nil {
-		logx.Error("[Nuclei Templates] SDK failed: %v, trying git clone...", downloadErr)
+		logx.Errorf("[Nuclei Templates] SDK failed: %v, trying git clone...", downloadErr)
 		updateDownloadStatus(taskId, "downloading", 25, 0, "")
 		
 		// 清理可能的部分下载
