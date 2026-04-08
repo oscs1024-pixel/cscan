@@ -229,6 +229,7 @@
     "ip": "IP Address",
     "site": "Site",
     "fingerprint": "Fingerprint",
+    "icon": "Icon",
     "url": "URL",
     "pageTitle": "Title",
     "statusCode": "Status Code",
@@ -245,6 +246,7 @@
     "assetGroups": "Asset Groups",
     "assetInventory": "Asset Inventory",
     "screenshots": "Screenshots",
+    "searchApp": "Search application name",
     "searchAssetGroups": "Search asset groups...",
     "searchInHostNames": "Search IP / domain / hostname / title...",
     "searchInScreenshots": "Search in screenshots...",
@@ -359,6 +361,52 @@
       "iconHash": "IconHash",
       "server": "Server",
       "banner": "Banner"
+    },
+    "appView": {
+      "total": "Applications",
+      "newCount": "New Today",
+      "viewAssets": "View Assets",
+      "searchPlaceholder": "Search application name",
+      "exportSelected": "Export Selected ({count})",
+      "exportAll": "Export All",
+      "exportCsv": "Export CSV",
+      "confirmDelete": "Are you sure you want to delete this application record?",
+      "confirmClear": "Are you sure you want to clear all application data?",
+      "columns": {
+        "app": "Application Name",
+        "assets": "Related Assets",
+        "category": "Category",
+        "organization": "Organization",
+        "createTime": "Discovered At",
+        "operation": "Operation"
+      },
+      "filters": {
+        "app": "Application Name",
+        "organization": "Organization",
+        "allOrganizations": "All Organizations"
+      }
+    },
+    "iconView": {
+      "total": "Total",
+      "newCount": "New",
+      "viewAssets": "View Assets",
+      "exportSelected": "Export Selected ({count})",
+      "exportAll": "Export All",
+      "exportCsv": "Export CSV",
+      "confirmDelete": "Are you sure you want to delete this icon?",
+      "confirmClear": "Are you sure you want to clear all icon data?",
+      "filters": {
+        "iconHash": "Icon Hash"
+      },
+      "columns": {
+        "iconImage": "Icon",
+        "iconHash": "Icon Hash",
+        "assets": "Related Assets",
+        "screenshot": "Screenshot",
+        "createTime": "Discovered At",
+        "updateTime": "Updated At",
+        "operation": "Operation"
+      }
     },
     "assetGroupsTab": {
       "searchPlaceholder": "Search asset groups...",
@@ -618,7 +666,7 @@
     "retry": "Retry",
     "delete": "Delete",
     "created": "Created",
-    "pendingExec": "Pending",
+    "pendingExec": "Pending Scanner Node",
     "executing": "Executing",
     "paused": "Paused",
     "execFailed": "Failed",
