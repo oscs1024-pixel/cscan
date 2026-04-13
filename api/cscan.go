@@ -11,12 +11,12 @@ import (
 
 	"cscan/api/internal/config"
 	"cscan/api/internal/handler"
+	"cscan/api/internal/logic"
 	"cscan/api/internal/svc"
 	"cscan/model"
 	"cscan/scheduler"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
@@ -295,112 +295,7 @@ func startOrphanedTaskRecovery(svcCtx *svc.ServiceContext) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		recoverOrphanedTasks(svcCtx)
-	}
-}
-
-// recoverOrphanedTasks 恢复孤儿任务
-func recoverOrphanedTasks(svcCtx *svc.ServiceContext) {
-	ctx := context.Background()
-
-	// 获取所有 workspace
-	workspaces, err := svcCtx.WorkspaceModel.FindAll(ctx)
-	if err != nil {
-		logx.Errorf("[OrphanedTaskRecovery] Failed to get workspaces: %v", err)
-		return
-	}
-
-	// 任务超时时间：30 分钟没有更新的任务认为需要恢复
-	cutoffTime := time.Now().Add(-30 * time.Minute)
-	totalRecovered := 0
-
-	for _, ws := range workspaces {
-		taskModel := svcCtx.GetMainTaskModel(ws.Name)
-
-		// 查找状态为 STARTED 且超时的任务
-		filter := map[string]interface{}{
-			"status": "STARTED",
-			"update_time": map[string]interface{}{
-				"$lt": cutoffTime,
-			},
-		}
-
-		tasks, err := taskModel.Find(ctx, filter, 0, 50)
-		if err != nil {
-			logx.Errorf("[OrphanedTaskRecovery] Failed to find tasks for workspace %s: %v", ws.Name, err)
-			continue
-		}
-
-		for _, task := range tasks {
-			// 将任务状态重置为 PENDING
-			update := map[string]interface{}{
-				"status":      "PENDING",
-				"update_time": time.Now(),
-			}
-
-			if err := taskModel.UpdateByTaskId(ctx, task.TaskId, update); err != nil {
-				logx.Errorf("[OrphanedTaskRecovery] Failed to update task %s: %v", task.TaskId, err)
-				continue
-			}
-
-			// 重新将任务推入队列
-			taskInfo := map[string]interface{}{
-				"taskId":      task.TaskId,
-				"mainTaskId":  task.TaskId,
-				"workspaceId": ws.Name,
-				"taskName":    task.Name,
-				"config":      task.Config,
-				"priority":    5, // 恢复任务使用较高优先级
-				"createTime":  time.Now().Format("2006-01-02 15:04:05"),
-			}
-
-			taskData, _ := json.Marshal(taskInfo)
-			score := float64(time.Now().Unix()) - 5000 // 提高优先级
-
-			publicQueueKey := "cscan:task:queue"
-			if err := svcCtx.RedisClient.ZAdd(ctx, publicQueueKey, redis.Z{
-				Score:  score,
-				Member: taskData,
-			}).Err(); err != nil {
-				logx.Errorf("[OrphanedTaskRecovery] Failed to requeue task %s: %v", task.TaskId, err)
-				continue
-			}
-
-			totalRecovered++
-			logx.Infof("[OrphanedTaskRecovery] Recovered task %s for workspace %s", task.TaskId, ws.Name)
-		}
-	}
-
-	// 清理过期的 processing 集合记录
-	cleanupStaleProcessingTasks(svcCtx)
-
-	if totalRecovered > 0 {
-		logx.Infof("[OrphanedTaskRecovery] Total recovered tasks: %d", totalRecovered)
-	}
-}
-
-// cleanupStaleProcessingTasks 清理过期的处理中任务记录
-func cleanupStaleProcessingTasks(svcCtx *svc.ServiceContext) {
-	ctx := context.Background()
-	processingKey := "cscan:task:processing"
-
-	taskIds, err := svcCtx.RedisClient.SMembers(ctx, processingKey).Result()
-	if err != nil {
-		return
-	}
-
-	cleaned := 0
-	for _, taskId := range taskIds {
-		statusKey := "cscan:task:status:" + taskId
-		_, err := svcCtx.RedisClient.Get(ctx, statusKey).Result()
-		if err != nil {
-			// 状态不存在，直接清理
-			svcCtx.RedisClient.SRem(ctx, processingKey, taskId)
-			cleaned++
-		}
-	}
-
-	if cleaned > 0 {
-		logx.Infof("[OrphanedTaskRecovery] Cleaned up %d stale processing records", cleaned)
+		logic.RecoverOrphanedTasks(context.Background(), svcCtx, 30*time.Minute)
+		logic.CleanupStaleProcessingTasks(context.Background(), svcCtx, "")
 	}
 }
