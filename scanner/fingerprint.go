@@ -817,7 +817,7 @@ func (s *FingerprintScanner) fingerprint(ctx context.Context, asset *Asset, opts
 				logx.Debugf("Custom fingerprint engine (loaded %d fingerprints) detected apps for %s:%d: %v", fpCount, asset.Host, asset.Port, customApps)
 			}
 
-		for _, customApp := range customApps {
+			for _, customApp := range customApps {
 				appNameLower := strings.ToLower(customApp.Name)
 				// 查找是否已有相同应用（使用小写key匹配）
 				if result, exists := appResults[appNameLower]; exists {
