@@ -57,6 +57,8 @@
     "updateSuccess": "Updated successfully",
     "deleteSuccess": "Deleted successfully",
     "deleteFailed": "Delete failed",
+    "updateFailed": "Update failed",
+    "createFailed": "Create failed",
     "operationSuccess": "Operation successful",
     "operationFailed": "Operation failed",
     "statusUpdateSuccess": "Status updated successfully",
@@ -1996,7 +1998,13 @@
     "runSuccess": "Task started",
     "statusUpdateSuccess": "Status updated",
     "cronValidateError": "Invalid cron expression",
-    "reuseConfigHint": "Will reuse scan config from related task, can be adjusted after creation"
+    "reuseConfigHint": "Will reuse scan config from related task, can be adjusted after creation",
+    "confirmRunNow": "Are you sure you want to run this scheduled task now?",
+    "runFailed": "Failed to trigger execution",
+    "customCron": "Custom Cron Expression",
+    "validateRequestError": "Validation request error",
+    "updateFailed": "Update failed",
+    "createFailed": "Create failed"
   },
   "onlineSearch": {
     "title": "Online Search",

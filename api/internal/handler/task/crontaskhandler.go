@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,8 +15,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest/httpx"
+	"go.mongodb.org/mongo-driver/bson"
 )
+
+// cronParser 包级别Cron解析器（秒级精度），避免重复创建
+var cronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // CronTaskListReq 定时任务列表请求
 type CronTaskListReq struct {
@@ -78,12 +84,54 @@ type CronTaskDeleteReq struct {
 	Id string `json:"id"`
 }
 
+// CronTaskRunNowReq 立即执行定时任务请求
+type CronTaskRunNowReq struct {
+	Id string `json:"id"`
+}
+
 // CronTaskBatchDeleteReq 批量删除定时任务请求
 type CronTaskBatchDeleteReq struct {
 	Ids []string `json:"ids"`
 }
 
-// CronTaskListHandler 定时任务列表
+// syncCronTaskToRedis 将MongoDB中的定时任务同步到Redis（供调度器读取）
+func syncCronTaskToRedis(ctx context.Context, svcCtx *svc.ServiceContext, cronTask *model.CronTask) {
+	cronKey := "cscan:cron:tasks"
+	schedTask := scheduler.CronTask{
+		Id:           cronTask.CronTaskId,
+		Name:         cronTask.Name,
+		ScheduleType: cronTask.ScheduleType,
+		CronSpec:     cronTask.CronSpec,
+		ScheduleTime: cronTask.ScheduleTime,
+		WorkspaceId:  cronTask.WorkspaceId,
+		MainTaskId:   cronTask.MainTaskId,
+		TaskName:     cronTask.TaskName,
+		Target:       cronTask.Target,
+		Config:       cronTask.Config,
+		Status:       cronTask.Status,
+		LastRunTime:  cronTask.LastRunTime,
+		NextRunTime:  cronTask.NextRunTime,
+	}
+	data, err := json.Marshal(schedTask)
+	if err != nil {
+		logx.Errorf("[CronTask] failed to marshal cron task for redis sync: cronTaskId=%s, err=%v", cronTask.CronTaskId, err)
+		return
+	}
+	if err := svcCtx.RedisClient.HSet(ctx, cronKey, cronTask.CronTaskId, data).Err(); err != nil {
+		logx.Errorf("[CronTask] sync to redis failed: cronTaskId=%s, err=%v", cronTask.CronTaskId, err)
+	}
+}
+
+// removeCronTaskFromRedis 从Redis中删除定时任务缓存
+func removeCronTaskFromRedis(ctx context.Context, svcCtx *svc.ServiceContext, cronTaskId string) {
+	cronKey := "cscan:cron:tasks"
+	svcCtx.RedisClient.HDel(ctx, cronKey, cronTaskId)
+	// 删除运行次数记录
+	runCountKey := fmt.Sprintf("cscan:cron:runcount:%s", cronTaskId)
+	svcCtx.RedisClient.Del(ctx, runCountKey)
+}
+
+// CronTaskListHandler 定时任务列表（从MongoDB读取）
 func CronTaskListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CronTaskListReq
@@ -95,33 +143,17 @@ func CronTaskListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		workspaceId := middleware.GetWorkspaceId(r.Context())
 		ctx := r.Context()
 
-		// 从Redis获取定时任务
-		cronKey := "cscan:cron:tasks"
-		data, err := svcCtx.RedisClient.HGetAll(ctx, cronKey).Result()
+		// 从MongoDB读取定时任务（关键字过滤在MongoDB层完成）
+		tasks, total, err := svcCtx.CronTaskModel.FindByWorkspaceId(ctx, workspaceId, req.Keyword, req.Page, req.PageSize)
 		if err != nil {
 			response.Error(w, fmt.Errorf("获取定时任务失败: %v", err))
 			return
 		}
 
 		var list []*CronTaskItem
-		for id, taskData := range data {
-			var task scheduler.CronTask
-			if err := json.Unmarshal([]byte(taskData), &task); err != nil {
-				continue
-			}
-
-			// 过滤工作空间
-			if workspaceId != "" && workspaceId != "all" && task.WorkspaceId != workspaceId {
-				continue
-			}
-
-			// 关键字搜索
-			if req.Keyword != "" && task.Name != req.Keyword && task.TaskName != req.Keyword {
-				continue
-			}
-
-			// 获取运行次数
-			runCountKey := fmt.Sprintf("cscan:cron:runcount:%s", id)
+		for _, task := range tasks {
+			// 从Redis获取运行次数（仅运行次数保留在Redis，属于临时计数器）
+			runCountKey := fmt.Sprintf("cscan:cron:runcount:%s", task.CronTaskId)
 			runCount, _ := svcCtx.RedisClient.Get(ctx, runCountKey).Int64()
 
 			// 截取目标显示（用于列表）
@@ -131,7 +163,7 @@ func CronTaskListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			}
 
 			list = append(list, &CronTaskItem{
-				Id:           id,
+				Id:           task.CronTaskId,
 				Name:         task.Name,
 				ScheduleType: task.ScheduleType,
 				CronSpec:     task.CronSpec,
@@ -139,32 +171,14 @@ func CronTaskListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 				WorkspaceId:  task.WorkspaceId,
 				MainTaskId:   task.MainTaskId,
 				TaskName:     task.TaskName,
-				Target:       task.Target, // 完整目标（用于编辑）
-				TargetShort:  targetShort, // 截断目标（用于列表显示）
-				Config:       task.Config, // 完整配置（用于编辑）
+				Target:       task.Target,
+				TargetShort:  targetShort,
+				Config:       task.Config,
 				Status:       task.Status,
 				LastRunTime:  task.LastRunTime,
 				NextRunTime:  task.NextRunTime,
 				RunCount:     runCount,
 			})
-		}
-
-		// 分页
-		total := len(list)
-		if req.Page <= 0 {
-			req.Page = 1
-		}
-		if req.PageSize <= 0 {
-			req.PageSize = 20
-		}
-		start := (req.Page - 1) * req.PageSize
-		end := start + req.PageSize
-		if start > total {
-			list = []*CronTaskItem{}
-		} else if end > total {
-			list = list[start:]
-		} else {
-			list = list[start:end]
 		}
 
 		if list == nil {
@@ -176,13 +190,13 @@ func CronTaskListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			Msg:  "success",
 			Data: &CronTaskListRespData{
 				List:  list,
-				Total: total,
+				Total: int(total),
 			},
 		})
 	}
 }
 
-// CronTaskSaveHandler 保存定时任务
+// CronTaskSaveHandler 保存定时任务（MongoDB主存储 + Redis调度缓存同步）
 func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CronTaskSaveReq
@@ -211,8 +225,7 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 				response.ParamError(w, "Cron表达式不能为空")
 				return
 			}
-			parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-			schedule, err := parser.Parse(req.CronSpec)
+			schedule, err := cronParser.Parse(req.CronSpec)
 			if err != nil {
 				response.ParamError(w, fmt.Sprintf("无效的Cron表达式: %v", err))
 				return
@@ -223,7 +236,6 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 				response.ParamError(w, "请选择执行时间")
 				return
 			}
-			// 验证时间格式
 			t, err := time.ParseInLocation("2006-01-02 15:04:05", req.ScheduleTime, time.Local)
 			if err != nil {
 				response.ParamError(w, "时间格式无效，请使用 YYYY-MM-DD HH:mm:ss 格式")
@@ -244,20 +256,20 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			workspaceId = middleware.GetWorkspaceId(r.Context())
 		}
 		ctx := r.Context()
-		cronKey := "cscan:cron:tasks"
 
 		// 获取关联任务的信息
 		var mainTask *model.MainTask
 		var foundWorkspaceId string
 
 		if workspaceId == "" || workspaceId == "all" {
-			// 遍历所有工作空间查找任务
-			workspaces, _ := svcCtx.WorkspaceModel.FindAll(ctx)
+			workspaces, wsErr := svcCtx.WorkspaceModel.FindAll(ctx)
+			if wsErr != nil {
+				logx.Errorf("[CronTaskSave] failed to list workspaces: %v", wsErr)
+			}
 			workspaceIds := []string{"default"}
 			for _, ws := range workspaces {
 				workspaceIds = append(workspaceIds, ws.Id.Hex())
 			}
-
 			for _, wsId := range workspaceIds {
 				taskModel := svcCtx.GetMainTaskModel(wsId)
 				task, err := taskModel.FindByTaskId(ctx, req.MainTaskId)
@@ -269,7 +281,11 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			}
 		} else {
 			taskModel := svcCtx.GetMainTaskModel(workspaceId)
-			mainTask, _ = taskModel.FindByTaskId(ctx, req.MainTaskId)
+			var findErr error
+			mainTask, findErr = taskModel.FindByTaskId(ctx, req.MainTaskId)
+			if findErr != nil {
+				logx.Errorf("[CronTaskSave] failed to find task by taskId=%s in workspace=%s: %v", req.MainTaskId, workspaceId, findErr)
+			}
 			foundWorkspaceId = workspaceId
 		}
 
@@ -279,23 +295,24 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 		workspaceId = foundWorkspaceId
 
-		// 确定使用的目标和配置（优先使用请求中的自定义值，否则使用关联任务的值）
+		// 确定使用的目标和配置
 		target := req.Target
 		if target == "" {
 			target = mainTask.Target
 		}
 		config := req.Config
 		if config == "" {
+			logx.Infof("[CronTaskSave] config is empty for cron task '%s', falling back to mainTask.Config (taskId=%s)", req.Name, req.MainTaskId)
 			config = mainTask.Config
 		}
 
-		var task scheduler.CronTask
 		isNew := req.Id == ""
 
 		if isNew {
-			// 新建
-			task = scheduler.CronTask{
-				Id:           uuid.New().String(),
+			// 新建 - 写入MongoDB
+			cronTaskId := uuid.New().String()
+			cronTask := &model.CronTask{
+				CronTaskId:   cronTaskId,
 				Name:         req.Name,
 				ScheduleType: req.ScheduleType,
 				CronSpec:     req.CronSpec,
@@ -305,42 +322,50 @@ func CronTaskSaveHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 				TaskName:     mainTask.Name,
 				Target:       target,
 				Config:       config,
-				Status:       "enable", // 新建后默认启用
+				Status:       "enable",
 				NextRunTime:  nextRunTime,
 			}
+			if err := svcCtx.CronTaskModel.Insert(ctx, cronTask); err != nil {
+				response.Error(w, fmt.Errorf("保存定时任务失败: %v", err))
+				return
+			}
+			// 同步到Redis调度缓存
+			syncCronTaskToRedis(ctx, svcCtx, cronTask)
+			// 通知调度器重新加载
+			svcCtx.RedisClient.Publish(ctx, "cscan:cron:reload", cronTaskId)
 		} else {
-			// 更新 - 先获取现有任务
-			existingData, err := svcCtx.RedisClient.HGet(ctx, cronKey, req.Id).Result()
-			if err != nil {
+			// 更新 - 从MongoDB获取并更新
+			existingTask, err := svcCtx.CronTaskModel.FindByCronTaskId(ctx, req.Id)
+			if err != nil || existingTask == nil {
 				response.Error(w, fmt.Errorf("定时任务不存在"))
 				return
 			}
-			if err := json.Unmarshal([]byte(existingData), &task); err != nil {
-				response.Error(w, fmt.Errorf("解析任务数据失败"))
+
+			update := bson.M{
+				"name":          req.Name,
+				"schedule_type": req.ScheduleType,
+				"cron_spec":     req.CronSpec,
+				"schedule_time": req.ScheduleTime,
+				"workspace_id":  workspaceId,
+				"main_task_id":  req.MainTaskId,
+				"task_name":     mainTask.Name,
+				"target":        target,
+				"config":        config,
+				"next_run_time": nextRunTime,
+			}
+			if err := svcCtx.CronTaskModel.UpdateByCronTaskId(ctx, req.Id, update); err != nil {
+				response.Error(w, fmt.Errorf("更新定时任务失败: %v", err))
 				return
 			}
 
-			task.Name = req.Name
-			task.ScheduleType = req.ScheduleType
-			task.CronSpec = req.CronSpec
-			task.ScheduleTime = req.ScheduleTime
-			task.MainTaskId = req.MainTaskId
-			task.TaskName = mainTask.Name
-			task.Target = target
-			task.Config = config
-			task.NextRunTime = nextRunTime
-		}
+			// 读取更新后的完整数据同步到Redis
+			updatedTask, _ := svcCtx.CronTaskModel.FindByCronTaskId(ctx, req.Id)
+			if updatedTask != nil {
+				syncCronTaskToRedis(ctx, svcCtx, updatedTask)
+			}
 
-		// 保存到Redis
-		data, _ := json.Marshal(task)
-		if err := svcCtx.RedisClient.HSet(ctx, cronKey, task.Id, data).Err(); err != nil {
-			response.Error(w, fmt.Errorf("保存定时任务失败: %v", err))
-			return
-		}
-
-		// 如果任务是启用状态，需要重新注册到调度器
-		if task.Status == "enable" {
-			svcCtx.RedisClient.Publish(ctx, "cscan:cron:reload", task.Id)
+			// 通知调度器重新加载（无论启用/禁用状态，确保内存与MongoDB一致）
+			svcCtx.RedisClient.Publish(ctx, "cscan:cron:reload", req.Id)
 		}
 
 		response.SuccessWithMsg(w, "保存成功")
@@ -366,50 +391,47 @@ func CronTaskToggleHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		cronKey := "cscan:cron:tasks"
 
-		// 获取现有任务
-		existingData, err := svcCtx.RedisClient.HGet(ctx, cronKey, req.Id).Result()
-		if err != nil {
+		// 从MongoDB获取现有任务
+		task, err := svcCtx.CronTaskModel.FindByCronTaskId(ctx, req.Id)
+		if err != nil || task == nil {
 			response.Error(w, fmt.Errorf("任务不存在"))
 			return
 		}
 
-		var task scheduler.CronTask
-		if err := json.Unmarshal([]byte(existingData), &task); err != nil {
-			response.Error(w, fmt.Errorf("解析任务数据失败"))
-			return
-		}
-
-		task.Status = req.Status
+		update := bson.M{"status": req.Status}
 
 		// 如果启用，更新下次运行时间
 		if req.Status == "enable" {
 			if task.ScheduleType == "cron" {
-				parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-				if schedule, err := parser.Parse(task.CronSpec); err == nil {
-					task.NextRunTime = schedule.Next(time.Now()).Local().Format("2006-01-02 15:04:05")
+				if schedule, err := cronParser.Parse(task.CronSpec); err == nil {
+					nextRun := schedule.Next(time.Now()).Local().Format("2006-01-02 15:04:05")
+					update["next_run_time"] = nextRun
 				}
 			} else if task.ScheduleType == "once" {
-				// 检查指定时间是否已过
 				t, _ := time.ParseInLocation("2006-01-02 15:04:05", task.ScheduleTime, time.Local)
 				if t.Before(time.Now()) {
 					response.Error(w, fmt.Errorf("指定的执行时间已过，请修改执行时间"))
 					return
 				}
-				task.NextRunTime = task.ScheduleTime
+				update["next_run_time"] = task.ScheduleTime
 			}
 		}
 
-		// 保存到Redis
-		data, _ := json.Marshal(task)
-		if err := svcCtx.RedisClient.HSet(ctx, cronKey, task.Id, data).Err(); err != nil {
+		// 更新MongoDB
+		if err := svcCtx.CronTaskModel.UpdateByCronTaskId(ctx, req.Id, update); err != nil {
 			response.Error(w, fmt.Errorf("更新定时任务失败: %v", err))
 			return
 		}
 
+		// 读取更新后的完整数据同步到Redis
+		updatedTask, _ := svcCtx.CronTaskModel.FindByCronTaskId(ctx, req.Id)
+		if updatedTask != nil {
+			syncCronTaskToRedis(ctx, svcCtx, updatedTask)
+		}
+
 		// 通知调度器
-		svcCtx.RedisClient.Publish(ctx, "cscan:cron:reload", task.Id)
+		svcCtx.RedisClient.Publish(ctx, "cscan:cron:reload", req.Id)
 
 		msg := "已启用"
 		if req.Status == "disable" {
@@ -434,17 +456,15 @@ func CronTaskDeleteHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		cronKey := "cscan:cron:tasks"
 
-		// 删除任务
-		if err := svcCtx.RedisClient.HDel(ctx, cronKey, req.Id).Err(); err != nil {
+		// 从MongoDB删除
+		if err := svcCtx.CronTaskModel.DeleteByCronTaskId(ctx, req.Id); err != nil {
 			response.Error(w, fmt.Errorf("删除定时任务失败: %v", err))
 			return
 		}
 
-		// 删除运行次数记录
-		runCountKey := fmt.Sprintf("cscan:cron:runcount:%s", req.Id)
-		svcCtx.RedisClient.Del(ctx, runCountKey)
+		// 从Redis删除调度缓存
+		removeCronTaskFromRedis(ctx, svcCtx, req.Id)
 
 		// 通知调度器移除任务
 		svcCtx.RedisClient.Publish(ctx, "cscan:cron:remove", req.Id)
@@ -468,29 +488,28 @@ func CronTaskBatchDeleteHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		cronKey := "cscan:cron:tasks"
 
-		successCount := 0
-		for _, id := range req.Ids {
-			// 删除任务
-			if err := svcCtx.RedisClient.HDel(ctx, cronKey, id).Err(); err == nil {
-				successCount++
-				// 删除运行次数记录
-				runCountKey := fmt.Sprintf("cscan:cron:runcount:%s", id)
-				svcCtx.RedisClient.Del(ctx, runCountKey)
-				// 通知调度器移除任务
-				svcCtx.RedisClient.Publish(ctx, "cscan:cron:remove", id)
-			}
+		// 从MongoDB批量删除
+		deletedCount, err := svcCtx.CronTaskModel.BatchDeleteByCronTaskIds(ctx, req.Ids)
+		if err != nil {
+			response.Error(w, fmt.Errorf("批量删除定时任务失败: %v", err))
+			return
 		}
 
-		response.SuccessWithMsg(w, fmt.Sprintf("成功删除 %d 个定时任务", successCount))
+		// 从Redis删除调度缓存并通知调度器
+		for _, id := range req.Ids {
+			removeCronTaskFromRedis(ctx, svcCtx, id)
+			svcCtx.RedisClient.Publish(ctx, "cscan:cron:remove", id)
+		}
+
+		response.SuccessWithMsg(w, fmt.Sprintf("成功删除 %d 个定时任务", deletedCount))
 	}
 }
 
 // CronTaskRunNowHandler 立即执行定时任务
 func CronTaskRunNowHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req CronTaskDeleteReq
+		var req CronTaskRunNowReq
 		if err := httpx.Parse(r, &req); err != nil {
 			response.ParamError(w, err.Error())
 			return
@@ -502,6 +521,14 @@ func CronTaskRunNowHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+
+		// 先确保Redis缓存是最新的（从MongoDB同步）
+		cronTask, err := svcCtx.CronTaskModel.FindByCronTaskId(ctx, req.Id)
+		if err != nil || cronTask == nil {
+			response.Error(w, fmt.Errorf("定时任务不存在"))
+			return
+		}
+		syncCronTaskToRedis(ctx, svcCtx, cronTask)
 
 		// 通知调度器立即执行
 		svcCtx.RedisClient.Publish(ctx, "cscan:cron:runnow", req.Id)
@@ -521,10 +548,9 @@ func ValidateCronSpecHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, err := parser.Parse(req.CronSpec)
+		schedule, err := cronParser.Parse(req.CronSpec)
 		if err != nil {
-			httpx.OkJson(w, map[string]interface{}{
+			httpx.OkJson(w, map[string]any{
 				"code": 1,
 				"msg":  fmt.Sprintf("无效的Cron表达式: %v", err),
 				"data": nil,
@@ -532,7 +558,6 @@ func ValidateCronSpecHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		// 计算接下来5次执行时间
 		var nextTimes []string
 		t := time.Now()
 		for i := 0; i < 5; i++ {
@@ -540,10 +565,10 @@ func ValidateCronSpecHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			nextTimes = append(nextTimes, t.Local().Format("2006-01-02 15:04:05"))
 		}
 
-		httpx.OkJson(w, map[string]interface{}{
+		httpx.OkJson(w, map[string]any{
 			"code": 0,
 			"msg":  "success",
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"valid":     true,
 				"nextTimes": nextTimes,
 			},

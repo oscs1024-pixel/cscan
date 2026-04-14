@@ -20,6 +20,7 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 var configFile = flag.String("f", "etc/cscan.yaml", "the config file")
@@ -55,8 +56,8 @@ func main() {
 
 	handler.RegisterHandlers(server, svcCtx)
 
-	// 创建任务调度器服务
-	schedulerSvc := scheduler.NewSchedulerService(svcCtx.RedisClient, svcCtx.SyncMethods)
+	// 创建任务调度器服务（复用svcCtx中已有的Scheduler实例，避免创建重复实例）
+	schedulerSvc := scheduler.NewSchedulerService(svcCtx.Scheduler, svcCtx.RedisClient, svcCtx.SyncMethods, &cronTaskSourceAdapter{model: svcCtx.CronTaskModel})
 	go schedulerSvc.Start()
 
 	// 启动定时任务执行消息订阅
@@ -68,7 +69,7 @@ func main() {
 	// logx.Infof("Starting API server at %s:%d...", c.Host, c.Port)
 	fmt.Println("---------------------------------------------------------")
 	logx.Infof("✅ CScan API is running at: %s:%d", c.Host, c.Port)
-	logx.Infof("gn  Environment: %s | LogLevel: %s", c.Mode, c.Log.Level)
+	logx.Infof("⚙️  Environment: %s | LogLevel: %s", c.Mode, c.Log.Level)
 	logx.Infof("📡 Ready to handle requests...")
 	fmt.Println("---------------------------------------------------------")
 	server.Start()
@@ -84,27 +85,44 @@ type CronExecuteMessage struct {
 	Config      string `json:"config"`
 }
 
-// startCronExecuteSubscriber 启动定时任务执行消息订阅
+// startCronExecuteSubscriber 启动定时任务执行消息订阅（含自动重连）
 func startCronExecuteSubscriber(svcCtx *svc.ServiceContext, sched *scheduler.Scheduler) {
 	ctx := context.Background()
-	pubsub := svcCtx.RedisClient.Subscribe(ctx, "cscan:cron:execute")
-	defer pubsub.Close()
+	retryDelay := 5 * time.Second
+	maxRetryDelay := 60 * time.Second
 
-	logx.Info("Cron execute subscriber started")
+	for {
+		pubsub := svcCtx.RedisClient.Subscribe(ctx, "cscan:cron:execute")
 
-	ch := pubsub.Channel()
-	for msg := range ch {
-		var execMsg CronExecuteMessage
-		if err := json.Unmarshal([]byte(msg.Payload), &execMsg); err != nil {
-			logx.Errorf("Failed to parse cron execute message: %v", err)
-			continue
+		logx.Info("Cron execute subscriber started")
+
+		ch := pubsub.Channel()
+		for msg := range ch {
+			// 成功接收消息说明连接正常，重置退避延迟
+			retryDelay = 5 * time.Second
+
+			var execMsg CronExecuteMessage
+			if err := json.Unmarshal([]byte(msg.Payload), &execMsg); err != nil {
+				logx.Errorf("Failed to parse cron execute message: %v", err)
+				continue
+			}
+
+			logx.Infof("Received cron execute message: cronTaskId=%s, taskName=%s", execMsg.CronTaskId, execMsg.TaskName)
+
+			// 创建新的 MainTask 并推送到队列
+			if err := createAndPushCronTask(ctx, svcCtx, sched, &execMsg); err != nil {
+				logx.Errorf("Failed to create cron task: %v", err)
+			}
 		}
-
-		logx.Infof("Received cron execute message: cronTaskId=%s, taskName=%s", execMsg.CronTaskId, execMsg.TaskName)
-
-		// 创建新的 MainTask 并推送到队列
-		if err := createAndPushCronTask(ctx, svcCtx, sched, &execMsg); err != nil {
-			logx.Errorf("Failed to create cron task: %v", err)
+		pubsub.Close()
+		logx.Errorf("[CronExecuteSubscriber] Redis subscription disconnected, reconnecting in %v...", retryDelay)
+		time.Sleep(retryDelay)
+		// 指数退避，最大60秒
+		if retryDelay < maxRetryDelay {
+			retryDelay = retryDelay * 2
+			if retryDelay > maxRetryDelay {
+				retryDelay = maxRetryDelay
+			}
 		}
 	}
 }
@@ -215,14 +233,18 @@ func createAndPushCronTask(ctx context.Context, svcCtx *svc.ServiceContext, sche
 
 	// 保存主任务信息到 Redis
 	taskInfoKey := "cscan:task:info:" + newTaskId
-	taskInfoData, _ := json.Marshal(map[string]interface{}{
+	taskInfoData, err := json.Marshal(map[string]interface{}{
 		"workspaceId":    workspaceId,
 		"mainTaskId":     newTask.Id.Hex(),
 		"subTaskCount":   subTaskCount,
 		"batchCount":     len(batches),
 		"enabledModules": enabledModules,
 	})
-	svcCtx.RedisClient.Set(ctx, taskInfoKey, taskInfoData, 24*time.Hour)
+	if err != nil {
+		logx.Errorf("Failed to marshal task info for redis: %v", err)
+	} else {
+		svcCtx.RedisClient.Set(ctx, taskInfoKey, taskInfoData, 24*time.Hour)
+	}
 
 	// 从配置中获取指定的 Worker 列表
 	var workers []string
@@ -244,7 +266,11 @@ func createAndPushCronTask(ctx context.Context, svcCtx *svc.ServiceContext, sche
 		subConfig["target"] = batch
 		subConfig["subTaskIndex"] = i
 		subConfig["subTaskTotal"] = len(batches)
-		subConfigBytes, _ := json.Marshal(subConfig)
+		subConfigBytes, err := json.Marshal(subConfig)
+		if err != nil {
+			logx.Errorf("Failed to marshal sub config: %v", err)
+			continue
+		}
 
 		// 生成子任务ID
 		subTaskId := newTaskId
@@ -272,12 +298,16 @@ func createAndPushCronTask(ctx context.Context, svcCtx *svc.ServiceContext, sche
 		// 保存子任务信息到 Redis（多批次时）
 		if len(batches) > 1 {
 			subTaskInfoKey := "cscan:task:info:" + subTaskId
-			subTaskInfoData, _ := json.Marshal(map[string]interface{}{
+			subTaskInfoData, err := json.Marshal(map[string]interface{}{
 				"workspaceId":  workspaceId,
 				"mainTaskId":   newTask.Id.Hex(),
 				"subTaskCount": subTaskCount,
 			})
-			svcCtx.RedisClient.Set(ctx, subTaskInfoKey, subTaskInfoData, 24*time.Hour)
+			if err != nil {
+				logx.Errorf("Failed to marshal sub task info for redis: %v", err)
+			} else {
+				svcCtx.RedisClient.Set(ctx, subTaskInfoKey, subTaskInfoData, 24*time.Hour)
+			}
 		}
 	}
 
@@ -298,4 +328,70 @@ func startOrphanedTaskRecovery(svcCtx *svc.ServiceContext) {
 		logic.RecoverOrphanedTasks(context.Background(), svcCtx, 30*time.Minute)
 		logic.CleanupStaleProcessingTasks(context.Background(), svcCtx, "")
 	}
+}
+
+// cronTaskSourceAdapter 适配器：将model.CronTaskModel适配为scheduler.CronTaskSource接口
+type cronTaskSourceAdapter struct {
+	model *model.CronTaskModel
+}
+
+func (a *cronTaskSourceAdapter) FindAllCronTasks(ctx context.Context) ([]scheduler.CronTaskData, error) {
+	tasks, err := a.model.FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]scheduler.CronTaskData, 0, len(tasks))
+	for _, t := range tasks {
+		result = append(result, scheduler.CronTaskData{
+			CronTaskId:   t.CronTaskId,
+			Name:         t.Name,
+			ScheduleType: t.ScheduleType,
+			CronSpec:     t.CronSpec,
+			ScheduleTime: t.ScheduleTime,
+			WorkspaceId:  t.WorkspaceId,
+			MainTaskId:   t.MainTaskId,
+			TaskName:     t.TaskName,
+			Target:       t.Target,
+			Config:       t.Config,
+			Status:       t.Status,
+			LastRunTime:  t.LastRunTime,
+			NextRunTime:  t.NextRunTime,
+		})
+	}
+	return result, nil
+}
+
+func (a *cronTaskSourceAdapter) FindCronTaskByCronTaskId(ctx context.Context, cronTaskId string) (*scheduler.CronTaskData, error) {
+	t, err := a.model.FindByCronTaskId(ctx, cronTaskId)
+	if err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, nil
+	}
+	return &scheduler.CronTaskData{
+		CronTaskId:   t.CronTaskId,
+		Name:         t.Name,
+		ScheduleType: t.ScheduleType,
+		CronSpec:     t.CronSpec,
+		ScheduleTime: t.ScheduleTime,
+		WorkspaceId:  t.WorkspaceId,
+		MainTaskId:   t.MainTaskId,
+		TaskName:     t.TaskName,
+		Target:       t.Target,
+		Config:       t.Config,
+		Status:       t.Status,
+		LastRunTime:  t.LastRunTime,
+		NextRunTime:  t.NextRunTime,
+	}, nil
+}
+
+func (a *cronTaskSourceAdapter) UpdateCronTaskRunInfo(ctx context.Context, cronTaskId string, lastRunTime, nextRunTime, status string) error {
+	update := bson.M{
+		"last_run_time": lastRunTime,
+		"next_run_time": nextRunTime,
+		"status":        status,
+	}
+	return a.model.UpdateByCronTaskId(ctx, cronTaskId, update)
 }

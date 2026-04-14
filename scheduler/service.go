@@ -24,9 +24,8 @@ type SchedulerService struct {
 }
 
 // NewSchedulerService 创建调度器服务
-func NewSchedulerService(rdb *redis.Client, syncMethods SyncInterface) *SchedulerService {
-	sched := NewScheduler(rdb)
-	cronManager := NewCronManager(sched, rdb)
+func NewSchedulerService(sched *Scheduler, rdb *redis.Client, syncMethods SyncInterface, taskSrc CronTaskSource) *SchedulerService {
+	cronManager := NewCronManager(sched, rdb, taskSrc)
 
 	return &SchedulerService{
 		scheduler:   sched,
@@ -67,6 +66,12 @@ func (s *SchedulerService) Start() {
 // Stop 停止服务
 func (s *SchedulerService) Stop() {
 	logx.Info("Stopping scheduler service...")
+
+	// 停止定时任务管理器中的所有任务和订阅
+	if s.cronManager != nil {
+		s.cronManager.Stop()
+	}
+
 	s.scheduler.Stop()
 	logx.Info("Scheduler service stopped")
 }

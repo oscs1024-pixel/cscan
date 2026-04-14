@@ -40,6 +40,7 @@ type ServiceContext struct {
 	AuditLogModel           *model.AuditLogModel
 	NotifyConfigModel       *model.NotifyConfigModel
 	ScanTemplateModel       *model.ScanTemplateModel
+	CronTaskModel           *model.CronTaskModel
 
 	// 调度器
 	Scheduler *scheduler.Scheduler
@@ -138,6 +139,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		AuditLogModel:           model.NewAuditLogModel(mongoDB),
 		NotifyConfigModel:       model.NewNotifyConfigModel(mongoDB),
 		ScanTemplateModel:       model.NewScanTemplateModel(mongoDB),
+		CronTaskModel:           model.NewCronTaskModel(mongoDB),
 		Scheduler:               scheduler.NewScheduler(rdb),
 		ScanResultService:       NewScanResultService(mongoDB),
 		HistoryService:          NewHistoryService(mongoDB),
