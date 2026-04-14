@@ -2,10 +2,12 @@ package scanner
 
 import (
 	"context"
+	"cscan/pkg/geolocation"
 	"cscan/pkg/utils"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +21,9 @@ import (
 
 // ErrPortThresholdExceeded 端口阈值超过错误
 var ErrPortThresholdExceeded = errors.New("port threshold exceeded")
+
+// ipLocator IP 地理位置定位器（全局单例）
+var ipLocator = geolocation.NewIPLocator()
 
 // NaabuScanner Naabu端口扫描器
 type NaabuScanner struct {
@@ -352,8 +357,18 @@ func (s *NaabuScanner) scanSingleTargetWithLogger(ctx context.Context, target, p
 				return
 			}
 
-			logInfo("Naabu: OnResult callback, host=%s, ports=%d", hr.Host, len(hr.Ports))
-			host := hr.Host
+			// hr.Host 是原始输入（可能是域名），hr.IP 是解析后的 IP 地址
+			originalHost := hr.Host
+			resolvedIP := hr.IP
+
+			logInfo("Naabu: OnResult callback, original=%s, resolved=%s, ports=%d", originalHost, resolvedIP, len(hr.Ports))
+
+			// 判断原始输入是域名还是 IP
+			originalIsIP := net.ParseIP(originalHost) != nil
+
+			// Host 字段：保持原始输入（域名或 IP）
+			host := originalHost
+
 			for _, port := range hr.Ports {
 				asset := &Asset{
 					Authority: utils.BuildTargetWithPort(host, port.Port),
@@ -361,11 +376,37 @@ func (s *NaabuScanner) scanSingleTargetWithLogger(ctx context.Context, target, p
 					Port:      port.Port,
 					Category:  getCategory(host),
 				}
+
+				// 填充 IP 信息
+				if resolvedIP != "" {
+					// 查询 IP 地理位置
+					locStr, err := ipLocator.Locate(resolvedIP)
+					location := geolocation.NormalizeLocation(locStr)
+					logInfo("IP地理位置查询: ip=%s, raw=%s, normalized=%s, err=%v", resolvedIP, locStr, location, err)
+					if strings.Contains(resolvedIP, ":") {
+						// IPv6
+						asset.IPV6 = []IPInfo{{IP: resolvedIP, Location: location}}
+					} else {
+						// IPv4
+						asset.IPV4 = []IPInfo{{IP: resolvedIP, Location: location}}
+					}
+				} else if originalIsIP {
+					// 原始输入本身就是 IP，直接使用
+					locStr, err := ipLocator.Locate(originalHost)
+					location := geolocation.NormalizeLocation(locStr)
+					logInfo("IP地理位置查询(originalIP): ip=%s, raw=%s, normalized=%s, err=%v", originalHost, locStr, location, err)
+					asset.IPV4 = []IPInfo{{IP: originalHost, Location: location}}
+				}
+
 				assets = append(assets, asset)
 				foundPorts = append(foundPorts, fmt.Sprintf("%d", port.Port))
 
 				// 实时推送发现的存活端口作为有效原因，包含探测方式(SYN/CONNECT等)
-				logInfo("发现存活端口: %s:%d (通过 %s 探测)", host, port.Port, opts.ScanType)
+				if resolvedIP != "" && !originalIsIP {
+					logInfo("发现存活端口: %s:%d -> IP: %s (通过 %s 探测)", host, port.Port, resolvedIP, opts.ScanType)
+				} else {
+					logInfo("发现存活端口: %s:%d (通过 %s 探测)", host, port.Port, opts.ScanType)
+				}
 			}
 		},
 	}
