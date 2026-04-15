@@ -110,12 +110,13 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 初始化主题
   async function initTheme() {
-    // 先从服务端加载（loadFromServer 内部会设置 ref，watch 会自动触发 updateTheme）
+    // 先从服务端加载
     await loadFromServer()
-    // 如果服务端加载失败（loaded 仍为 false），手动触发一次确保主题生效
-    if (!loaded.value) {
-      updateTheme()
-    }
+    // 始终手动触发一次 updateTheme，因为：
+    // 1. 如果服务端返回的值与 ref 初始值相同（如 theme='system', colorTheme='default'），
+    //    watch 不会触发，导致 updateTheme 永远不被调用
+    // 2. 初始 isDark=false 可能与实际 theme='system' + 系统深色模式不一致
+    updateTheme()
   }
 
   // 更新主题
