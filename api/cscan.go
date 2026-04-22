@@ -171,33 +171,54 @@ func createAndPushCronTask(ctx context.Context, svcCtx *svc.ServiceContext, sche
 		}
 	}
 
-	// 计算启用的模块数
+	// 计算启用的模块数（与 worker/worker.go 中的 enabledPhases 计算保持一致）
+	// 关键规则：portscan 默认启用（enable != false），其他模块需要 enable == true
 	enabledModules := 0
-	if ps, ok := taskConfig["portscan"].(map[string]interface{}); ok {
-		if enable, _ := ps["enable"].(bool); enable {
-			enabledModules++
-		}
-	}
+
+	// DomainScan
 	if ds, ok := taskConfig["domainscan"].(map[string]interface{}); ok {
 		if enable, _ := ds["enable"].(bool); enable {
 			enabledModules++
 		}
 	}
+
+	// PortScan (default enabled if missing or nil, same as task_builder.go logic)
+	if ps, ok := taskConfig["portscan"].(map[string]interface{}); ok {
+		if enable, ok := ps["enable"].(bool); ok && enable {
+			enabledModules++
+		}
+		// Note: if portscan exists but enable is not true (or is false), don't count
+		// This matches task_builder.go logic
+	} else {
+		// portscan is nil or doesn't exist, count as enabled (default behavior)
+		enabledModules++
+	}
+
+	// Fingerprint
 	if fp, ok := taskConfig["fingerprint"].(map[string]interface{}); ok {
 		if enable, _ := fp["enable"].(bool); enable {
 			enabledModules++
 		}
 	}
+	// PocScan
 	if poc, ok := taskConfig["pocscan"].(map[string]interface{}); ok {
 		if enable, _ := poc["enable"].(bool); enable {
 			enabledModules++
 		}
 	}
+	// DirScan
 	if dir, ok := taskConfig["dirscan"].(map[string]interface{}); ok {
 		if enable, _ := dir["enable"].(bool); enable {
 			enabledModules++
 		}
 	}
+	// PortIdentify (missing from original code, but should be included)
+	if pi, ok := taskConfig["portidentify"].(map[string]interface{}); ok {
+		if enable, _ := pi["enable"].(bool); enable {
+			enabledModules++
+		}
+	}
+
 	if enabledModules == 0 {
 		enabledModules = 1
 	}
