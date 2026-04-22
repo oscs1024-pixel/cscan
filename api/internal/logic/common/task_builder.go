@@ -284,9 +284,8 @@ func convertScannerAssetToModelAsset(task *model.MainTask, scanAsset *scanner.As
 }
 
 func (b *TaskBuilder) countEnabledModules(configMap map[string]interface{}) int {
-	// Simplified parsing for counting
-	// Since we are working with map[string]interface{}, we need to check keys safely
-	// Note: JSON keys from task config are lowercase (e.g. "domainscan", "portscan")
+	// 与 worker/worker.go 中的 enabledPhases 计算保持一致
+	// 关键规则：portscan 默认启用（enable != false），其他模块需要 enable == true
 	count := 0
 
 	// DomainScan
@@ -296,14 +295,19 @@ func (b *TaskBuilder) countEnabledModules(configMap map[string]interface{}) int 
 		}
 	}
 
-	// PortScan (default enabled if missing or nil)
-	if ps, ok := configMap["portscan"].(map[string]interface{}); !ok || ps == nil {
-		count++
-	} else if enable, ok := ps["enable"].(bool); ok && enable {
+	// PortScan (default enabled if missing or nil, same as worker logic)
+	if ps, ok := configMap["portscan"].(map[string]interface{}); ok {
+		if enable, ok := ps["enable"].(bool); ok && enable {
+			count++
+		}
+		// Note: if portscan exists but enable is not true (or is false), don't count
+		// This matches worker logic: if config.PortScan != nil && config.PortScan.Enable
+	} else {
+		// portscan is nil or doesn't exist, count as enabled (default behavior)
 		count++
 	}
 
-	// Other modules...
+	// Other modules (must be explicitly enabled)
 	modules := []string{"portidentify", "fingerprint", "dirscan", "pocscan"}
 	for _, mod := range modules {
 		if m, ok := configMap[mod].(map[string]interface{}); ok {
