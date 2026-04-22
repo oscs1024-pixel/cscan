@@ -221,6 +221,14 @@ func (l *UserResetPasswordLogic) UserResetPassword(req *types.UserResetPasswordR
 		return &types.BaseResp{Code: 404, Msg: "用户不存在"}, nil
 	}
 
+	// 校验原密码
+	if req.OldPassword == "" {
+		return &types.BaseResp{Code: 400, Msg: "请输入原密码"}, nil
+	}
+	if !model.CheckPassword(req.OldPassword, user.Password) {
+		return &types.BaseResp{Code: 400, Msg: "原密码错误"}, nil
+	}
+
 	// 重置密码
 	err = l.svcCtx.UserModel.UpdatePassword(l.ctx, req.Id, req.NewPassword)
 	if err != nil {
