@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cscan/api/internal/logic/common"
@@ -25,6 +26,22 @@ type MainTaskListLogic struct {
 	logx.Logger
 	ctx    context.Context
 	svcCtx *svc.ServiceContext
+}
+
+// hasAnyScanPhaseEnabled 检查任务配置中是否至少启用了一项扫描阶段
+// 扫描阶段包括：子域名扫描/端口扫描/端口识别/指纹识别/目录扫描/漏洞扫描
+func hasAnyScanPhaseEnabled(taskConfig map[string]interface{}) bool {
+	phases := []string{"domainscan", "portscan", "portidentify", "fingerprint", "dirscan", "pocscan"}
+	for _, phase := range phases {
+		section, ok := taskConfig[phase].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if enable, ok := section["enable"].(bool); ok && enable {
+			return true
+		}
+	}
+	return false
 }
 
 func NewMainTaskListLogic(ctx context.Context, svcCtx *svc.ServiceContext) *MainTaskListLogic {
@@ -82,15 +99,21 @@ func (l *MainTaskListLogic) MainTaskList(req *types.MainTaskListReq, workspaceId
 			wsId  string
 		}
 		resultChan := make(chan wsResult, len(wsIds))
+		var wg sync.WaitGroup
 
 		for _, ws := range wsIds {
+			wg.Add(1)
 			go func(workspaceId string) {
+				defer wg.Done()
 				taskModel := l.svcCtx.GetMainTaskModel(workspaceId)
 				wsTotal, _ := taskModel.Count(ctx, filter)
 				wsTasks, _ := taskModel.Find(ctx, filter, 0, 0)
 				resultChan <- wsResult{tasks: wsTasks, count: wsTotal, wsId: workspaceId}
 			}(ws)
 		}
+
+		// 等待所有 goroutine 完成后再收集结果
+		wg.Wait()
 
 		// 收集结果
 		for i := 0; i < len(wsIds); i++ {
@@ -368,6 +391,12 @@ func (l *MainTaskCreateLogic) MainTaskCreate(req *types.MainTaskCreateReq, works
 
 	// 注入自定义POC和标签映射
 	taskConfig = common.InjectPocConfig(l.ctx, l.svcCtx, taskConfig, l.Logger)
+
+	// 校验：至少启用一项扫描配置
+	if !hasAnyScanPhaseEnabled(taskConfig) {
+		return &types.BaseRespWithId{Code: 400, Msg: "请至少启用一项扫描配置（子域名扫描、端口扫描、端口识别、指纹识别、目录扫描或漏洞扫描）"}, nil
+	}
+
 	configBytes, _ := json.Marshal(taskConfig)
 
 	configStr := string(configBytes)
@@ -979,9 +1008,6 @@ func (l *MainTaskResumeLogic) MainTaskResume(req *types.MainTaskControlReq, work
 			return &types.BaseResp{Code: 400, Msg: "任务不存在"}, nil
 		}
 	}
-
-	// 避免 taskModel 未使用的编译错误
-	_ = taskModel
 
 	l.Logger.Infof("MainTaskResume: found task, taskId=%s, status=%s, subTaskCount=%d, subTaskDone=%d",
 		task.TaskId, task.Status, task.SubTaskCount, task.SubTaskDone)
