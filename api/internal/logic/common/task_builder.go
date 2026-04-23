@@ -33,11 +33,9 @@ func NewTaskBuilder(ctx context.Context, svcCtx *svc.ServiceContext) *TaskBuilde
 
 // BuildAndPushSubTasks splits targets and pushes sub-tasks to Redis queue
 func (b *TaskBuilder) BuildAndPushSubTasks(workspaceId string, task *model.MainTask, taskConfig map[string]interface{}) (int, error) {
-	// 1. Determine Batch Size
-	batchSize := 50
-	if bs, ok := taskConfig["batchSize"].(float64); ok && bs > 0 {
-		batchSize = int(bs)
-	}
+	// 1. Determine Batch Size — 自动计算最佳值
+	batchSize := b.CalculateOptimalBatchSize(task.Target, taskConfig)
+	b.log.Infof("TaskBuilder: auto-calculated batchSize=%d for task %s", batchSize, task.TaskId)
 
 	// 2. Split Targets
 	splitter := scheduler.NewTargetSplitter(batchSize)
@@ -347,4 +345,62 @@ func (b *TaskBuilder) extractWorkers(config map[string]interface{}) []string {
 		}
 	}
 	return workers
+}
+
+// CalculateOptimalBatchSize 根据目标数量和启用的模块自动计算最佳批次大小
+// 核心原则：控制子任务总数（batches × modules）在合理范围内（10~30），
+// 避免碎片化（子任务过多导致调度开销大）和过度聚合（单批次过大导致超时）
+func (b *TaskBuilder) CalculateOptimalBatchSize(target string, taskConfig map[string]interface{}) int {
+	// 如果用户显式设置了 batchSize > 0，优先使用（向后兼容）
+	if bs, ok := taskConfig["batchSize"].(float64); ok && bs > 0 {
+		return int(bs)
+	}
+
+	// 计算目标总数
+	splitter := scheduler.NewTargetSplitter(1000000) // 用大值获取总目标数
+	targetCount := splitter.GetTargetCount(target)
+
+	// 获取启用的模块数
+	enabledModules := b.countEnabledModules(taskConfig)
+
+	// 最佳子任务总数范围：10~30
+	// 太少 → 单批次过大 → POC扫描超时
+	// 太多 → 调度开销大、进度卡顿感明显
+	const (
+		minSubTasks = 10
+		maxSubTasks = 30
+	)
+
+	// 反推最佳批次数 = 子任务总数 / 模块数
+	optimalBatches := (minSubTasks + maxSubTasks) / 2 / enabledModules
+	if optimalBatches < 1 {
+		optimalBatches = 1
+	}
+
+	// 反推最佳 batchSize = 目标总数 / 批次数
+	batchSize := targetCount / optimalBatches
+	if batchSize < 1 {
+		batchSize = 1
+	}
+
+	// 限制 batchSize 在合理范围内
+	// 最小 20：避免过度碎片化（如 batchSize=5 导致子任务爆炸）
+	// 最大 200：避免单批次过大导致 POC 超时
+	const (
+		minBatchSize = 20
+		maxBatchSize = 200
+	)
+	if batchSize < minBatchSize {
+		batchSize = minBatchSize
+	}
+	if batchSize > maxBatchSize {
+		batchSize = maxBatchSize
+	}
+
+	// 如果目标数量小于 minBatchSize，则不拆分
+	if targetCount <= minBatchSize {
+		return targetCount
+	}
+
+	return batchSize
 }
