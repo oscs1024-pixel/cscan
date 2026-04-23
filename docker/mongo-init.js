@@ -29,7 +29,7 @@ db.task_profile.insertOne({
     name: "默认扫描",
     description: "cscan项目默认扫描配置",
     config: JSON.stringify({
-        batchSize: 5,
+        batchSize: 0,
         domainscan: { enable: false, timeout: 30, maxEnumerationTime: 10, threads: 10, rateLimit: 0, all: false, recursive: false, removeWildcard: true, resolveDNS: true, concurrent: 50 },
         portscan: { enable: true, tool: "naabu", rate: 1000, ports: "top1000", portThreshold: 50, scanType: "c", timeout: 600, skipHostDiscovery: false },
         portidentify: { enable: false, timeout: 30, args: "" },
