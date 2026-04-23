@@ -28,13 +28,13 @@ type LoginReq struct {
 }
 
 type LoginResp struct {
-	Code        int    `json:"code"`
-	Msg         string `json:"msg"`
-	Token       string `json:"token"`
-	UserId      string `json:"userId"`
-	Username    string `json:"username"`
-	Role        string `json:"role"`
-	WorkspaceId string `json:"workspaceId"`
+	Code          int    `json:"code"`
+	Msg           string `json:"msg"`
+	Token         string `json:"token"`
+	UserId        string `json:"userId"`
+	Username      string `json:"username"`
+	Role          string `json:"role"`
+	WorkspaceId   string `json:"workspaceId"`
 	NeedChangePwd bool   `json:"needChangePwd"`
 }
 
@@ -193,25 +193,23 @@ type Asset struct {
 }
 
 type AssetListReq struct {
-	Page         int    `json:"page,default=1"`
-	PageSize     int    `json:"pageSize,default=20"`
-	Query        string `json:"query,optional"`
-	Host         string `json:"host,optional"`
-	Port         int    `json:"port,optional"`
-	Service      string `json:"service,optional"`
-	Title        string `json:"title,optional"`
-	App          string `json:"app,optional"`
-	HttpStatus   string `json:"httpStatus,optional"`
-	IconHash     string `json:"iconHash,optional"`
-	OrgId        string `json:"orgId,optional"`
-	OnlyNew      bool   `json:"onlyNew,optional"`
-	OnlyUpdated  bool   `json:"onlyUpdated,optional"`
-	ExcludeCdn   bool   `json:"excludeCdn,optional"`
-	SortByUpdate bool   `json:"sortByUpdate,optional"`
-	// 新增字段 - 按风险评分排序
-	SortByRisk bool `json:"sortByRisk,optional"`
-	// 新增字段 - 时间范围筛选（最近N天内更新的资产）
-	UpdatedWithinDays int `json:"updatedWithinDays,optional"` // 0表示不限制
+	Page              int    `json:"page,default=1"`
+	PageSize          int    `json:"pageSize,default=20"`
+	Query             string `json:"query,optional"`
+	Host              string `json:"host,optional"`
+	Port              int    `json:"port,optional"`
+	Service           string `json:"service,optional"`
+	Title             string `json:"title,optional"`
+	App               string `json:"app,optional"`
+	HttpStatus        string `json:"httpStatus,optional"`
+	IconHash          string `json:"iconHash,optional"`
+	OrgId             string `json:"orgId,optional"`
+	OnlyNew           bool   `json:"onlyNew,optional"`
+	OnlyUpdated       bool   `json:"onlyUpdated,optional"`
+	ExcludeCdn        bool   `json:"excludeCdn,optional"`
+	SortByUpdate      bool   `json:"sortByUpdate,optional"`
+	SortByRisk        bool   `json:"sortByRisk,optional"`
+	UpdatedWithinDays int    `json:"updatedWithinDays,optional"` // 0表示不限制
 }
 
 type AssetListResp struct {
@@ -918,8 +916,8 @@ type WorkerSetConcurrencyResp struct {
 type OnlineSearchReq struct {
 	Platform string `json:"platform"` // fofa/hunter/quake
 	Query    string `json:"query"`
-	Page     int    `json:"page,default=1"`
-	PageSize int    `json:"pageSize,default=20"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"pageSize"`
 }
 
 type OnlineSearchResult struct {
@@ -2070,11 +2068,11 @@ type NotifyConfig struct {
 
 // HighRiskFilter 高危过滤配置
 type HighRiskFilter struct {
-	Enabled               bool     `json:"enabled"`               // 是否启用高危过滤，false时全部通知
-	HighRiskFingerprints  []string `json:"highRiskFingerprints"`  // 高危指纹列表
-	HighRiskPorts         []int    `json:"highRiskPorts"`         // 高危端口列表
-	HighRiskPocSeverities []string `json:"highRiskPocSeverities"` // 高危POC严重级别: critical, high
-	NewAssetNotify        bool     `json:"newAssetNotify"`        // 新资产发现时通知
+	Enabled               bool        `json:"enabled"`               // 是否启用高危过滤，false时全部通知
+	HighRiskFingerprints  []string    `json:"highRiskFingerprints"`  // 高危指纹列表
+	HighRiskPorts         interface{} `json:"highRiskPorts"`         // 高危端口列表（支持 int[] 或 string[]）
+	HighRiskPocSeverities []string    `json:"highRiskPocSeverities"` // 高危POC严重级别: critical, high, medium, low 或中文
+	NewAssetNotify        bool        `json:"newAssetNotify"`        // 新资产发现时通知
 }
 
 // NotifyConfigListResp 通知配置列表响应
@@ -2166,12 +2164,12 @@ type BlacklistRulesResp struct {
 
 // HighRiskFilterConfig 高危过滤全局配置
 type HighRiskFilterConfig struct {
-	Enabled               bool     `json:"enabled"`               // 是否启用高危过滤
-	HighRiskFingerprints  []string `json:"highRiskFingerprints"`  // 高危指纹列表
-	HighRiskPorts         []int    `json:"highRiskPorts"`         // 高危端口列表
-	HighRiskPocSeverities []string `json:"highRiskPocSeverities"` // 高危POC严重级别
-	NewAssetNotify        bool     `json:"newAssetNotify"`        // 新资产发现时通知
-	UpdateTime            string   `json:"updateTime"`            // 更新时间
+	Enabled               bool     `bson:"enabled" json:"enabled"`                              // 是否启用高危过滤
+	HighRiskFingerprints  []string `bson:"high_risk_fingerprints" json:"highRiskFingerprints"`  // 高危指纹列表
+	HighRiskPorts         []int    `bson:"high_risk_ports" json:"highRiskPorts"`                // 高危端口列表
+	HighRiskPocSeverities []string `bson:"high_risk_poc_severities" json:"highRiskPocSeverities"` // 高危POC严重级别
+	NewAssetNotify        bool     `bson:"new_asset_notify" json:"newAssetNotify"`            // 新资产发现时通知
+	UpdateTime            string   `bson:"update_time" json:"updateTime"`                    // 更新时间
 }
 
 // HighRiskFilterConfigResp 高危过滤配置响应
@@ -2194,7 +2192,7 @@ type HighRiskFilterConfigSaveReq struct {
 
 // AssetFingerprintsListReq 资产指纹列表请求
 type AssetFingerprintsListReq struct {
-	Limit int `json:"limit,default=500"`
+	Limit int `json:"limit"`
 }
 
 // AssetFingerprintsListResp 资产指纹列表响应
