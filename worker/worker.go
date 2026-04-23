@@ -1840,15 +1840,17 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 					w.loadCustomFingerprints(ctx, s.(*scanner.FingerprintScanner), config.Fingerprint.ActiveScan)
 				}
 
-				// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
-				fpConcurrency := config.Fingerprint.Concurrency
-				if fpConcurrency <= 0 {
-					fpConcurrency = 1
-				}
-				fingerprintTimeout := targetTimeout * len(assetsToScan) / fpConcurrency
-				if fingerprintTimeout < 60 {
-					fingerprintTimeout = 60
-				}
+			// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+			fpConcurrency := config.Fingerprint.Concurrency
+			if fpConcurrency <= 0 {
+				fpConcurrency = 1
+			}
+			fingerprintTimeout := targetTimeout * len(assetsToScan) / fpConcurrency
+			// runner.New() 初始化（LevelDB 清理等）可能需要较长时间，
+			// 尤其是在 Windows 上，最小值设为 180 秒以确保有足够初始化时间
+			if fingerprintTimeout < 180 {
+				fingerprintTimeout = 180
+			}
 				w.taskLog(task.TaskId, LevelInfo, "Fingerprint: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
 					fingerprintTimeout, targetTimeout, len(assetsToScan), fpConcurrency)
 				fpCtx, fpCancel := context.WithTimeout(ctx, time.Duration(fingerprintTimeout)*time.Second)

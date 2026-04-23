@@ -569,8 +569,10 @@ func (e *FingerprintExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 		fpConcurrency = 1
 	}
 	fingerprintTimeout := targetTimeout * len(assets) / fpConcurrency
-	if fingerprintTimeout < 60 {
-		fingerprintTimeout = 60
+	// runner.New() 初始化（LevelDB 清理等）可能需要较长时间，
+	// 尤其是在 Windows 上，最小值设为 180 秒以确保有足够初始化时间
+	if fingerprintTimeout < 180 {
+		fingerprintTimeout = 180
 	}
 	w.taskLog(task.TaskId, LevelInfo, "Fingerprint: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
 		fingerprintTimeout, targetTimeout, len(assets), fpConcurrency)
