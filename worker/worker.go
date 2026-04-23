@@ -1840,17 +1840,17 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 					w.loadCustomFingerprints(ctx, s.(*scanner.FingerprintScanner), config.Fingerprint.ActiveScan)
 				}
 
-			// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
-			fpConcurrency := config.Fingerprint.Concurrency
-			if fpConcurrency <= 0 {
-				fpConcurrency = 1
-			}
-			fingerprintTimeout := targetTimeout * len(assetsToScan) / fpConcurrency
-			// runner.New() 初始化（LevelDB 清理等）可能需要较长时间，
-			// 尤其是在 Windows 上，最小值设为 180 秒以确保有足够初始化时间
-			if fingerprintTimeout < 180 {
-				fingerprintTimeout = 180
-			}
+				// 按单目标超时计算总超时：单目标超时 × 目标数 / 并发数
+				fpConcurrency := config.Fingerprint.Concurrency
+				if fpConcurrency <= 0 {
+					fpConcurrency = 1
+				}
+				fingerprintTimeout := targetTimeout * len(assetsToScan) / fpConcurrency
+				// runner.New() 初始化（LevelDB 清理等）可能需要较长时间，
+				// 尤其是在 Windows 上，最小值设为 180 秒以确保有足够初始化时间
+				if fingerprintTimeout < 180 {
+					fingerprintTimeout = 180
+				}
 				w.taskLog(task.TaskId, LevelInfo, "Fingerprint: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
 					fingerprintTimeout, targetTimeout, len(assetsToScan), fpConcurrency)
 				fpCtx, fpCancel := context.WithTimeout(ctx, time.Duration(fingerprintTimeout)*time.Second)
@@ -2390,6 +2390,8 @@ func (w *Worker) saveVulResult(ctx context.Context, workspaceId, mainTaskId stri
 		return
 	}
 
+	w.taskLog(mainTaskId, LevelInfo, "[SaveVul] Starting to save %d vulnerabilities via HTTP API", len(vuls))
+
 	httpVuls := make([]VulDocument, 0, len(vuls))
 	for _, vul := range vuls {
 		// Debug: 打印扫描层与发送层的关键字段
@@ -2409,14 +2411,23 @@ func (w *Worker) saveVulResult(ctx context.Context, workspaceId, mainTaskId stri
 		httpVuls = append(httpVuls, httpVul)
 	}
 
+	w.taskLog(mainTaskId, LevelInfo, "[SaveVul] Calling HTTP API to save %d vulnerabilities, workspaceId=%s", len(httpVuls), workspaceId)
+
 	// 通过 HTTP 接口保存漏洞结果
-	_, err := w.httpClient.SaveVulResult(ctx, &VulResultReq{
+	resp, err := w.httpClient.SaveVulResult(ctx, &VulResultReq{
 		WorkspaceId: workspaceId,
 		MainTaskId:  mainTaskId,
 		Vuls:        httpVuls,
 	})
 	if err != nil {
-		w.taskLog(mainTaskId, LevelError, "save vul result failed: %v", err)
+		w.taskLog(mainTaskId, LevelError, "[SaveVul] HTTP request failed: %v", err)
+		return
+	}
+
+	if resp != nil {
+		w.taskLog(mainTaskId, LevelInfo, "[SaveVul] HTTP API response: success=%v, message=%s, total=%d", resp.Success, resp.Msg, resp.Total)
+	} else {
+		w.taskLog(mainTaskId, LevelWarn, "[SaveVul] HTTP API response is nil")
 	}
 }
 
