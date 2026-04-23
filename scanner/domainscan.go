@@ -75,8 +75,8 @@ func parseDomains(target string) []string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// 只保留域名
-		if !net.ParseIP(line).IsUnspecified() {
+		// 跳过IP地址，只保留域名
+		if net.ParseIP(line) != nil {
 			continue
 		}
 		domains = append(domains, line)
@@ -85,7 +85,8 @@ func parseDomains(target string) []string {
 }
 
 // enumerateSubdomains 子域名枚举
-func (s *DomainScanner) enumerateSubdomains(_ context.Context, domain string, _ *DomainScanOptions) []string {
+// TODO: 集成 subfinder SDK 实现真实子域名枚举，当前仅使用字典拼接
+func (s *DomainScanner) enumerateSubdomains(ctx context.Context, domain string, opts *DomainScanOptions) []string {
 	var subdomains []string
 
 	// 常见子域名前缀
