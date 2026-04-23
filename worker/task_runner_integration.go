@@ -343,6 +343,7 @@ func (e *PortScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 	parseResult := scanner.ParseTargetsForPortScan(ctx.Target)
 
 	var openPorts []*scanner.Asset
+	var skippedHosts []string
 
 	// 1. 处理带端口的目标（直接创建资产，跳过端口扫描）
 	if len(parseResult.WithPort) > 0 {
@@ -426,8 +427,13 @@ func (e *PortScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 				if err != nil {
 					w.taskLog(task.TaskId, LevelError, "Masscan error: %v", err)
 				}
-				if result != nil && len(result.Assets) > 0 {
-					openPorts = append(openPorts, result.Assets...)
+				if result != nil {
+					if len(result.Assets) > 0 {
+						openPorts = append(openPorts, result.Assets...)
+					}
+					if len(result.SkippedHosts) > 0 {
+						skippedHosts = append(skippedHosts, result.SkippedHosts...)
+					}
 				}
 			}
 		default:
@@ -442,8 +448,16 @@ func (e *PortScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 				if err != nil && err != scanner.ErrPortThresholdExceeded {
 					w.taskLog(task.TaskId, LevelError, "Naabu error: %v", err)
 				}
-				if result != nil && len(result.Assets) > 0 {
-					openPorts = append(openPorts, result.Assets...)
+				if err == scanner.ErrPortThresholdExceeded {
+					w.taskLog(task.TaskId, LevelWarn, "Some targets exceeded port threshold and were skipped")
+				}
+				if result != nil {
+					if len(result.Assets) > 0 {
+						openPorts = append(openPorts, result.Assets...)
+					}
+					if len(result.SkippedHosts) > 0 {
+						skippedHosts = append(skippedHosts, result.SkippedHosts...)
+					}
 				}
 			}
 		}
@@ -467,7 +481,11 @@ func (e *PortScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 		w.taskLog(task.TaskId, LevelInfo, "No open ports found")
 	}
 
-	return &PhaseResult{Assets: openPorts}, nil
+	if len(skippedHosts) > 0 {
+		w.taskLog(task.TaskId, LevelWarn, "Port scan: %d hosts skipped due to port threshold: %v", len(skippedHosts), skippedHosts)
+	}
+
+	return &PhaseResult{Assets: openPorts, SkippedHosts: skippedHosts}, nil
 }
 
 // FingerprintExecutor 指纹识别阶段执行器
@@ -496,9 +514,12 @@ func (e *FingerprintExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 	config := ctx.Config.Fingerprint
 
 	// 如果没有资产但有目标，从目标生成资产（支持用户直接输入目标进行部分扫描）
+	// GenerateAssetsFromTargets 已过滤DNS解析失败的域名
 	assets := ctx.Assets
 	if len(assets) == 0 && ctx.Target != "" {
 		generatedAssets := scanner.GenerateAssetsFromTargets(ctx.Target)
+		// 排除因端口阈值超限被跳过的主机
+		generatedAssets = filterSkippedHosts(generatedAssets, ctx.SkippedHosts)
 		if len(generatedAssets) > 0 {
 			assets = generatedAssets
 			ctx.Assets = generatedAssets
@@ -629,6 +650,7 @@ func (e *FingerprintExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 				originalAsset.HttpBody = fpAsset.HttpBody
 				originalAsset.Server = fpAsset.Server
 				originalAsset.IconHash = fpAsset.IconHash
+				originalAsset.IsHTTP = fpAsset.IsHTTP
 				if len(fpAsset.IconData) > 0 {
 					originalAsset.IconData = fpAsset.IconData
 				}
@@ -671,9 +693,12 @@ func (e *PocScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 	config := ctx.Config.PocScan
 
 	// 如果没有资产但有目标，从目标生成资产（支持用户直接输入目标进行部分扫描）
+	// GenerateAssetsFromTargets 已过滤DNS解析失败的域名
 	assets := ctx.Assets
 	if len(assets) == 0 && ctx.Target != "" {
 		generatedAssets := scanner.GenerateAssetsFromTargets(ctx.Target)
+		// 排除因端口阈值超限被跳过的主机
+		generatedAssets = filterSkippedHosts(generatedAssets, ctx.SkippedHosts)
 		if len(generatedAssets) > 0 {
 			assets = generatedAssets
 			ctx.Assets = generatedAssets
@@ -774,6 +799,13 @@ func (e *PocScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 	pocTimeout := pocTargetTimeout * len(assets) / pocConcurrency
 	if pocTimeout < 60 {
 		pocTimeout = 60
+	}
+	// 设置总超时上限，避免单批次POC扫描阻塞过久
+	// 最大不超过1800秒（30分钟），超时后返回已有结果
+	maxPocTimeout := 1800
+	if pocTimeout > maxPocTimeout {
+		w.taskLog(task.TaskId, LevelInfo, "POC scan: timeout capped from %ds to %ds", pocTimeout, maxPocTimeout)
+		pocTimeout = maxPocTimeout
 	}
 	w.taskLog(task.TaskId, LevelInfo, "POC scan: total timeout=%ds (single=%ds, assets=%d, concurrency=%d)",
 		pocTimeout, pocTargetTimeout, len(assets), pocConcurrency)
@@ -956,9 +988,12 @@ func (e *DirScanExecutor) Execute(ctx *TaskContext) (*PhaseResult, error) {
 	config := ctx.Config.DirScan
 
 	// 如果没有资产但有目标，从目标生成资产（支持用户直接输入带路径的目标）
+	// GenerateAssetsFromTargets 已过滤DNS解析失败的域名
 	assets := ctx.Assets
 	if len(assets) == 0 && ctx.Target != "" {
 		generatedAssets := scanner.GenerateAssetsFromTargets(ctx.Target)
+		// 排除因端口阈值超限被跳过的主机
+		generatedAssets = filterSkippedHosts(generatedAssets, ctx.SkippedHosts)
 		if len(generatedAssets) > 0 {
 			assets = generatedAssets
 			ctx.Assets = generatedAssets
@@ -1006,4 +1041,22 @@ func (i *TaskRunnerIntegration) RegisterDefaultExecutors() {
 	i.taskRunner.RegisterPhaseExecutor(PhaseFingerprint, NewFingerprintExecutor(i.worker))
 	i.taskRunner.RegisterPhaseExecutor(PhaseDirScan, NewDirScanExecutor(i.worker))
 	i.taskRunner.RegisterPhaseExecutor(PhasePocScan, NewPocScanExecutor(i.worker))
+}
+
+// filterSkippedHosts 过滤掉因端口阈值超限被跳过的主机的资产
+func filterSkippedHosts(assets []*scanner.Asset, skippedHosts []string) []*scanner.Asset {
+	if len(skippedHosts) == 0 || len(assets) == 0 {
+		return assets
+	}
+	skippedSet := make(map[string]bool, len(skippedHosts))
+	for _, h := range skippedHosts {
+		skippedSet[h] = true
+	}
+	var result []*scanner.Asset
+	for _, a := range assets {
+		if !skippedSet[a.Host] {
+			result = append(result, a)
+		}
+	}
+	return result
 }
