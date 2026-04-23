@@ -618,6 +618,10 @@ func (l *PocValidateLogic) PocValidate(req *types.PocValidateReq, workspaceId st
 		return &types.PocValidateResp{Code: 400, Msg: "POC ID不能为空"}, nil
 	}
 
+	// 确保使用有效的工作空间ID，避免漏洞保存到 all_vul 集合
+	workspaceId = common.GetDefaultWorkspaceId(l.ctx, l.svcCtx, workspaceId)
+	l.Logger.Debugf("POC验证使用工作空间ID: %s", workspaceId)
+
 	// 根据pocType确定POC类型
 	pocType := req.PocType
 	if pocType == "" {
@@ -694,6 +698,10 @@ func (l *PocBatchValidateLogic) PocBatchValidate(req *types.PocBatchValidateReq,
 	if len(req.Urls) == 0 {
 		return &types.PocBatchValidateResp{Code: 400, Msg: "URL列表不能为空"}, nil
 	}
+
+	// 确保使用有效的工作空间ID，避免漏洞保存到 all_vul 集合
+	workspaceId = common.GetDefaultWorkspaceId(l.ctx, l.svcCtx, workspaceId)
+	l.Logger.Debugf("批量POC验证使用工作空间ID: %s", workspaceId)
 
 	// 设置默认值
 	if req.PocType == "" {
