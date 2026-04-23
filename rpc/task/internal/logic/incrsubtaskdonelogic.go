@@ -178,11 +178,11 @@ func (l *IncrSubTaskDoneLogic) sendTaskNotification(workspaceId, mainTaskId, sta
 		}
 	}
 
-	// 加载全局高危过滤配置并合并到没有自带 HighRiskFilter 的配置项
+	// 加载全局高危过滤配置并合并到没有有效 HighRiskFilter 的配置项
 	globalHighRiskFilter := l.loadGlobalHighRiskFilter()
 	if globalHighRiskFilter != nil && globalHighRiskFilter.Enabled {
 		for i := range configItems {
-			if configItems[i].HighRiskFilter == nil {
+			if configItems[i].HighRiskFilter == nil || !configItems[i].HighRiskFilter.HasConditions() {
 				configItems[i].HighRiskFilter = globalHighRiskFilter
 			}
 		}
