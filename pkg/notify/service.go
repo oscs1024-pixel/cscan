@@ -2,7 +2,6 @@ package notify
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -108,7 +107,8 @@ func SendNotificationAsync(ctx context.Context, configs []ConfigItem, result *No
 // filterConfigsByHighRisk 根据高危配置过滤通知配置
 // 如果配置启用了高危过滤但未检测到高危项，则跳过该配置
 func filterConfigsByHighRisk(configs []ConfigItem, result *NotifyResult) []ConfigItem {
-	var filtered []ConfigItem
+	// 预分配切片，避免频繁append导致内存重新分配
+	filtered := make([]ConfigItem, 0, len(configs))
 	for _, cfg := range configs {
 		// 如果未启用高危过滤，直接添加
 		if cfg.HighRiskFilter == nil || !cfg.HighRiskFilter.Enabled {
@@ -126,54 +126,96 @@ func filterConfigsByHighRisk(configs []ConfigItem, result *NotifyResult) []Confi
 	return filtered
 }
 
+// severityLevelMapping 中文到英文的严重级别映射
+var severityLevelMapping = map[string]string{
+	"严重": "critical",
+	"高危": "high",
+	"中危": "medium",
+	"低危": "low",
+	"严重级别": "critical",
+	"高危级别": "high",
+	"中危级别": "medium",
+	"低危级别": "low",
+}
+
+// translateSeverityToEnglish 将中文严重级别转换为英文
+func translateSeverityToEnglish(level string) string {
+	if mapped, ok := severityLevelMapping[level]; ok {
+		return mapped
+	}
+	return level // 如果不是中文，直接返回原值
+}
+
+// translateSeveritiesToEnglish 将中文严重级别列表转换为去重的英文列表
+// Deprecated: 使用 map[string]struct{} 在 shouldNotifyByHighRisk 中直接去重，性能更好
+func translateSeveritiesToEnglish(levels []string) []string {
+	seen := make(map[string]struct{}, len(levels))
+	result := make([]string, 0, len(levels))
+	for _, level := range levels {
+		translated := translateSeverityToEnglish(level)
+		if _, exists := seen[translated]; !exists {
+			seen[translated] = struct{}{}
+			result = append(result, translated)
+		}
+	}
+	return result
+}
+
 // shouldNotifyByHighRisk 检查是否应该根据高危配置发送通知
+// 使用O(n)时间复杂度的map查找替代O(n*m)的嵌套循环
 func shouldNotifyByHighRisk(filter *HighRiskFilter, result *NotifyResult) bool {
 	if result.HighRiskInfo == nil {
 		return false
 	}
 
+	info := result.HighRiskInfo
+
 	// 检查新资产发现通知
-	if filter.NewAssetNotify && result.HighRiskInfo.NewAssetCount > 0 {
+	if filter.NewAssetNotify && info.NewAssetCount > 0 {
 		return true
 	}
 
-	// 检查高危指纹
-	if len(filter.HighRiskFingerprints) > 0 && len(result.HighRiskInfo.HighRiskFingerprints) > 0 {
+	// 检查高危指纹：使用map实现O(n)查找
+	if len(filter.HighRiskFingerprints) > 0 && len(info.HighRiskFingerprints) > 0 {
+		foundSet := make(map[string]struct{}, len(info.HighRiskFingerprints))
+		for _, fp := range info.HighRiskFingerprints {
+			foundSet[fp] = struct{}{}
+		}
 		for _, configFp := range filter.HighRiskFingerprints {
-			for _, foundFp := range result.HighRiskInfo.HighRiskFingerprints {
-				if configFp == foundFp {
-					return true
-				}
+			if _, exists := foundSet[configFp]; exists {
+				return true
 			}
 		}
 	}
 
-	// 检查高危端口
-	if len(filter.HighRiskPorts) > 0 && len(result.HighRiskInfo.HighRiskPorts) > 0 {
+	// 检查高危端口：使用map实现O(n)查找
+	if len(filter.HighRiskPorts) > 0 && len(info.HighRiskPorts) > 0 {
+		foundPorts := make(map[int]struct{}, len(info.HighRiskPorts))
+		for _, port := range info.HighRiskPorts {
+			foundPorts[port] = struct{}{}
+		}
 		for _, configPort := range filter.HighRiskPorts {
-			for _, foundPort := range result.HighRiskInfo.HighRiskPorts {
-				if configPort == foundPort {
-					return true
-				}
+			if _, exists := foundPorts[configPort]; exists {
+				return true
 			}
 		}
 	}
 
 	// 检查高危POC严重级别
-	if len(filter.HighRiskPocSeverities) > 0 && result.HighRiskInfo.HighRiskVulSeverities != nil {
+	if len(filter.HighRiskPocSeverities) > 0 && len(info.HighRiskVulSeverities) > 0 {
+		// 翻译并去重配置中的严重级别
+		translatedSet := make(map[string]struct{})
 		for _, severity := range filter.HighRiskPocSeverities {
-			if count, ok := result.HighRiskInfo.HighRiskVulSeverities[severity]; ok && count > 0 {
+			translated := translateSeverityToEnglish(severity)
+			translatedSet[translated] = struct{}{}
+		}
+		// 检查是否有匹配的严重级别且count>0
+		for severity := range translatedSet {
+			if count, ok := info.HighRiskVulSeverities[severity]; ok && count > 0 {
 				return true
 			}
 		}
 	}
 
 	return false
-}
-
-// ParseConfigJSON 解析配置JSON
-func ParseConfigJSON(configJSON string) (map[string]interface{}, error) {
-	var config map[string]interface{}
-	err := json.Unmarshal([]byte(configJSON), &config)
-	return config, err
 }
