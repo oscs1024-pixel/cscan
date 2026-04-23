@@ -214,13 +214,19 @@ func WorkerTaskResultHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 // POST /api/v1/worker/task/vul
 func WorkerVulResultHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logx.Infof("[WorkerVulResult] Received request from worker")
+
 		var req WorkerVulResultReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logx.Errorf("[WorkerVulResult] Failed to decode request: %v", err)
 			httpx.OkJson(w, &WorkerVulResultResp{Code: 400, Msg: "参数解析失败"})
 			return
 		}
 
+		logx.Infof("[WorkerVulResult] Received %d vulnerabilities, workspaceId=%s, mainTaskId=%s", len(req.Vuls), req.WorkspaceId, req.MainTaskId)
+
 		if req.WorkspaceId == "" || req.MainTaskId == "" {
+			logx.Errorf("[WorkerVulResult] Missing required fields: workspaceId=%s, mainTaskId=%s", req.WorkspaceId, req.MainTaskId)
 			httpx.OkJson(w, &WorkerVulResultResp{Code: 400, Msg: "workspaceId和mainTaskId不能为空"})
 			return
 		}
@@ -288,12 +294,16 @@ func WorkerVulResultHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			Vuls:        pbVuls,
 		}
 
+		logx.Infof("[WorkerVulResult] Calling RPC SaveVulResult with %d vulnerabilities", len(pbVuls))
+
 		rpcResp, err := svcCtx.TaskRpcClient.SaveVulResult(r.Context(), rpcReq)
 		if err != nil {
 			logx.Errorf("[WorkerVulResult] RPC SaveVulResult error: %v", err)
 			response.Error(w, err)
 			return
 		}
+
+		logx.Infof("[WorkerVulResult] RPC SaveVulResult succeeded: success=%v, total=%d", rpcResp.Success, rpcResp.Total)
 
 		httpx.OkJson(w, &WorkerVulResultResp{
 			Code:    0,
