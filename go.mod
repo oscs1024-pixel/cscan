@@ -5,11 +5,15 @@ go 1.25.1
 require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/ffuf/ffuf/v2 v2.1.0
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gobwas/ws v1.4.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
+	github.com/jlaffaye/ftp v0.2.0
 	github.com/leanovate/gopter v0.2.11
+	github.com/lib/pq v1.10.9
 	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260409130608-36c9de10bb8f
+	github.com/microsoft/go-mssqldb v1.9.2
 	github.com/praetorian-inc/fingerprintx v1.1.19
 	github.com/projectdiscovery/dnsx v1.2.3
 	github.com/projectdiscovery/goflags v0.1.74
@@ -26,9 +30,9 @@ require (
 	github.com/zeromicro/go-zero v1.7.3
 	go.mongodb.org/mongo-driver v1.17.4
 	go.opentelemetry.io/otel/trace v1.38.0
-	golang.org/x/crypto v0.47.0
-	golang.org/x/net v0.49.0
-	golang.org/x/text v0.33.0
+	golang.org/x/crypto v0.50.0
+	golang.org/x/net v0.52.0
+	golang.org/x/text v0.36.0
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.8
 	gopkg.in/yaml.v2 v2.4.0
@@ -191,7 +195,6 @@ require (
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
 	github.com/go-rod/rod v0.116.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goburrow/cache v0.1.4 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
@@ -222,7 +225,9 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
 	github.com/hako/durafmt v0.0.0-20210316092057-3a2c319c1acd // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
@@ -259,7 +264,6 @@ require (
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/leslie-qiwa/flat v0.0.0-20230424180412-f9d1cf014baa // indirect
-	github.com/lib/pq v1.10.9 // indirect
 	github.com/libdns/libdns v1.1.1 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/logrusorgru/aurora/v4 v4.0.0 // indirect
@@ -277,7 +281,6 @@ require (
 	github.com/mholt/acmez/v3 v3.1.3 // indirect
 	github.com/mholt/archives v0.1.5 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
-	github.com/microsoft/go-mssqldb v1.9.2 // indirect
 	github.com/miekg/dns v1.1.68 // indirect
 	github.com/mikelolasagasti/xz v1.0.1 // indirect
 	github.com/minio/minlz v1.0.1 // indirect
@@ -449,13 +452,13 @@ require (
 	goftp.io/server/v2 v2.0.1 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
-	golang.org/x/mod v0.31.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/oauth2 v0.31.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/term v0.39.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.40.0 // indirect
+	golang.org/x/tools v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250825161204-c5933d9347a5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
