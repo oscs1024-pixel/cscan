@@ -145,6 +145,24 @@ func (m *MainTaskModel) Find(ctx context.Context, filter bson.M, page, pageSize 
 	return docs, nil
 }
 
+// FindAllWithSort 查询所有匹配的任务，支持自定义排序
+func (m *MainTaskModel) FindAllWithSort(ctx context.Context, filter bson.M, sort bson.D) ([]MainTask, error) {
+	opts := options.Find()
+	opts.SetSort(sort)
+
+	cursor, err := m.coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var docs []MainTask
+	if err = cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	return docs, nil
+}
+
 func (m *MainTaskModel) Count(ctx context.Context, filter bson.M) (int64, error) {
 	return m.coll.CountDocuments(ctx, filter)
 }
