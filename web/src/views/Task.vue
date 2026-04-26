@@ -271,6 +271,20 @@
               {{ parsedConfig.fingerprint?.enable ? $t('task.enabled') : $t('task.disabled') }}
             </el-tag>
           </div>
+          <div class="module-card" :class="{ active: parsedConfig.brutescan?.enable }">
+            <el-icon class="module-icon"><Key /></el-icon>
+            <div class="module-info">
+              <span class="module-name">{{ $t('task.weakpassScan') }}</span>
+              <div class="module-details" v-if="parsedConfig.brutescan?.enable">
+                <span class="detail-item" v-if="parsedConfig.brutescan?.services?.length">{{ parsedConfig.brutescan.services.join(', ') }}</span>
+                <span class="detail-item" v-else>{{ $t('task.allServices') }}</span>
+                <span class="detail-item">{{ parsedConfig.brutescan?.threads || 20 }} {{ $t('task.threads') }}</span>
+              </div>
+            </div>
+            <el-tag :type="parsedConfig.brutescan?.enable ? 'success' : 'info'" size="small" effect="plain">
+              {{ parsedConfig.brutescan?.enable ? $t('task.enabled') : $t('task.disabled') }}
+            </el-tag>
+          </div>
           <div class="module-card" :class="{ active: parsedConfig.pocscan?.enable }">
             <el-icon class="module-icon"><WarnTriangleFilled /></el-icon>
             <div class="module-info">
@@ -494,7 +508,43 @@
               </div>
             </div>
           </el-collapse-item>
-          
+
+          <!-- 弱口令扫描配置 -->
+          <el-collapse-item v-if="parsedConfig.brutescan?.enable" name="brutescan">
+            <template #title>
+              <div class="collapse-title">
+                <el-icon><Key /></el-icon>
+                <span>{{ $t('task.weakpassScan') }}</span>
+              </div>
+            </template>
+            <div class="config-grid">
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.targetService') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.services?.length ? parsedConfig.brutescan.services.join(', ') : $t('task.allServices') }}</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.concurrent') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.threads || 20 }}</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.timeout') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.timeout || 5 }}{{ $t('task.seconds') }}</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.delayMs') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.delayMs || 100 }}ms</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.weakpassDict') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.weakpassDictIds?.length ? (parsedConfig.brutescan.weakpassDictIds.length + ' ' + $t('task.dicts')) : ($t('task.useDefaultDict')) }}</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">{{ $t('task.scanStrategy') }}</span>
+                <span class="config-value">{{ parsedConfig.brutescan?.stopOnFirst ? $t('task.stopOnFirstFound') : $t('task.scanAll') }}</span>
+              </div>
+            </div>
+          </el-collapse-item>
+
           <!-- 漏洞扫描配置 -->
           <el-collapse-item v-if="parsedConfig.pocscan?.enable" name="pocscan">
             <template #title>
@@ -951,7 +1001,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Search, Clock, VideoPlay, CircleCheck, Document, Setting, Connection, Monitor, Stamp, WarnTriangleFilled, FolderOpened, Grid, Aim, Operation } from '@element-plus/icons-vue'
+import { Plus, Delete, Search, Clock, VideoPlay, CircleCheck, Document, Setting, Connection, Monitor, Stamp, WarnTriangleFilled, FolderOpened, Grid, Aim, Operation, Key } from '@element-plus/icons-vue'
 import ScanWorkflow from '@/components/ScanWorkflow.vue'
 import { getTaskList, createTask, deleteTask, batchDeleteTask, retryTask, startTask, pauseTask, resumeTask, stopTask, updateTask, getTaskLogs, getWorkerList, saveScanConfig, getScanConfig } from '@/api/task'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -1026,12 +1076,11 @@ const form = reactive({
   portidentifyTool: 'nmap',
   portidentifyTimeout: 30,
   portidentifyConcurrency: 10,
-  portidentifyArgs: '',
+  portidentifyArgs: '-sV -version-intensity 5',
   portidentifyUDP: false,
   portidentifyFastMode: false,
   portidentifyForceScan: false,
   portidentifyTimeout: 30,
-  portidentifyArgs: '',
   fingerprintEnable: true,
   fingerprintTool: 'httpx',
   fingerprintIconHash: true,

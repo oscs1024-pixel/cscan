@@ -358,6 +358,39 @@
             </template>
           </el-collapse-item>
 
+          <!-- 弱口令扫描 -->
+          <el-collapse-item name="brutescan">
+            <template #title>
+              <span class="collapse-title">{{ $t('task.weakpassScan') }} <el-tag v-if="form.brutescanEnable" type="success" size="small">{{ $t('task.started') }}</el-tag></span>
+            </template>
+            <el-form-item :label="$t('task.enable')">
+              <el-switch v-model="form.brutescanEnable" />
+              <span class="form-hint">{{ $t('task.weakpassScanHint') }}</span>
+            </el-form-item>
+            <template v-if="form.brutescanEnable">
+              <!-- 强制扫描：仅在前序阶段均未启用时显示 -->
+              <el-form-item v-if="!hasPrePhaseEnabled" :label="$t('task.forceScan')">
+                <el-switch v-model="form.brutescanForceScan" />
+                <span class="form-hint warning-hint">{{ $t('task.forceScanHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.targetService')">
+                <el-checkbox-group v-model="form.brutescanServices" class="service-checkbox-group">
+                  <el-row :gutter="16">
+                    <el-col :span="6" v-for="service in bruteServiceOptions" :key="service.value">
+                      <el-checkbox :label="service.value" :value="service.value">
+                        {{ service.label }}
+                      </el-checkbox>
+                    </el-col>
+                  </el-row>
+                </el-checkbox-group>
+                <span class="form-hint">{{ $t('task.weakpassServiceHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.scanStrategy')">
+                <el-checkbox v-model="form.brutescanStopOnFirst">{{ $t('task.stopOnFirstFound') }}</el-checkbox>
+              </el-form-item>
+            </template>
+          </el-collapse-item>
+
           <!-- 目录扫描 -->
           <el-collapse-item name="dirscan">
             <template #title>
@@ -904,7 +937,7 @@ const workspaces = ref([])
 const organizations = ref([])
 const workers = ref([])
 const commonTags = ref([]) // 常用标签列表
-const activeCollapse = ref(['portscan', 'fingerprint'])
+const activeCollapse = ref([])
 const isEdit = ref(false)
 const selectedTemplate = ref(null)
 
@@ -936,6 +969,7 @@ const recursiveDictList = ref([])
 const recursiveDictLoading = ref(false)
 const recursiveDictTableRef = ref()
 const selectedRecursiveDictIds = ref([])
+
 const customPocList = ref([])
 const nucleiTemplateLoading = ref(false)
 const customPocLoading = ref(false)
@@ -989,6 +1023,20 @@ const customPocFilter = reactive({
 const nucleiTemplatePagination = reactive({ page: 1, pageSize: 50, total: 0 })
 const customPocPagination = reactive({ page: 1, pageSize: 50, total: 0 })
 
+// 弱口令扫描服务选项
+const bruteServiceOptions = [
+  { label: 'SSH', value: 'ssh' },
+  { label: 'MySQL', value: 'mysql' },
+  { label: 'Redis', value: 'redis' },
+  { label: 'MongoDB', value: 'mongodb' },
+  { label: 'PostgreSQL', value: 'postgresql' },
+  { label: 'MSSQL', value: 'mssql' },
+  { label: 'FTP', value: 'ftp' },
+  { label: 'Oracle', value: 'oracle' },
+  { label: 'SMB', value: 'smb' },
+  { label: 'MQTT', value: 'mqtt' },
+]
+
 const form = reactive({
   id: '',
   name: '',
@@ -1037,7 +1085,7 @@ const form = reactive({
   portidentifyTool: 'nmap',
   portidentifyTimeout: 30,
   portidentifyConcurrency: 10,
-  portidentifyArgs: '',
+  portidentifyArgs: '-sV -version-intensity 5',
   portidentifyUDP: false,
   portidentifyFastMode: false,
   portidentifyForceScan: false,
@@ -1052,6 +1100,11 @@ const form = reactive({
   fingerprintTimeout: 90,
   fingerprintFilterMode: 'http_mapping', // 过滤模式: http_mapping(HTTP映射) 或 service_mapping(服务映射)
   fingerprintForceScan: false,
+  // 弱口令扫描
+  brutescanEnable: false,
+  brutescanServices: [],
+  brutescanStopOnFirst: false,
+  brutescanForceScan: false,
   // 漏洞扫描
   pocscanEnable: false,
   pocscanMode: 'auto',
@@ -1154,6 +1207,27 @@ watch(() => form.recursiveDictIds, (newVal) => {
     form.domainscanRecursiveBrute = false
   }
 }, { deep: true })
+
+// 当模块启用状态变化时，自动展开/收缩对应面板
+watch([
+  () => form.domainscanEnable,
+  () => form.portscanEnable,
+  () => form.portidentifyEnable,
+  () => form.fingerprintEnable,
+  () => form.brutescanEnable,
+  () => form.dirscanEnable,
+  () => form.pocscanEnable
+], ([domainscan, portscan, portidentify, fingerprint, brutescan, dirscan, pocscan]) => {
+  const enabled = []
+  if (domainscan) enabled.push('domainscan')
+  if (portscan) enabled.push('portscan')
+  if (portidentify) enabled.push('portidentify')
+  if (fingerprint) enabled.push('fingerprint')
+  if (brutescan) enabled.push('brutescan')
+  if (dirscan) enabled.push('dirscan')
+  if (pocscan) enabled.push('pocscan')
+  activeCollapse.value = enabled
+})
 
 async function loadWorkspaces() {
   try {
@@ -1261,6 +1335,14 @@ function applyConfig(config) {
     fingerprintActiveTimeout: config.fingerprint?.activeTimeout || 10,
     fingerprintTimeout: config.fingerprint?.targetTimeout || 90,
     fingerprintFilterMode: config.fingerprint?.filterMode || 'http_mapping',
+    // 弱口令扫描
+    brutescanEnable: config.brutescan?.enable ?? false,
+    brutescanServices: config.brutescan?.services || [],
+    brutescanThreads: config.brutescan?.threads || 20,
+    brutescanTimeout: config.brutescan?.timeout || 5,
+    brutescanDelayMs: config.brutescan?.delayMs || 100,
+    brutescanStopOnFirst: config.brutescan?.stopOnFirst ?? false,
+    brutescanForceScan: config.brutescan?.forceScan ?? false,
     // 漏洞扫描
     pocscanEnable: config.pocscan?.enable ?? false,
     pocscanMode: isManualMode ? 'manual' : 'auto',
@@ -1281,6 +1363,17 @@ function applyConfig(config) {
     dirscanTimeout: config.dirscan?.timeout || 10,
     dirscanFollowRedirect: config.dirscan?.followRedirect ?? false
   })
+
+  // 根据启用的模块动态设置折叠面板展开状态
+  const enabled = []
+  if (config.domainscan?.enable) enabled.push('domainscan')
+  if (config.portscan?.enable ?? true) enabled.push('portscan')
+  if (config.portidentify?.enable) enabled.push('portidentify')
+  if (config.fingerprint?.enable ?? true) enabled.push('fingerprint')
+  if (config.brutescan?.enable) enabled.push('brutescan')
+  if (config.dirscan?.enable) enabled.push('dirscan')
+  if (config.pocscan?.enable) enabled.push('pocscan')
+  activeCollapse.value = enabled
 
   // 恢复选择的模板
   if (config.template !== undefined) {
@@ -1352,6 +1445,13 @@ watch(
     fingerprintActiveScan: form.fingerprintActiveScan,
     fingerprintActiveTimeout: form.fingerprintActiveTimeout,
     fingerprintTimeout: form.fingerprintTimeout,
+    brutescanEnable: form.brutescanEnable,
+    brutescanServices: form.brutescanServices,
+    brutescanThreads: form.brutescanThreads,
+    brutescanTimeout: form.brutescanTimeout,
+    brutescanDelayMs: form.brutescanDelayMs,
+    brutescanStopOnFirst: form.brutescanStopOnFirst,
+    brutescanForceScan: form.brutescanForceScan,
     pocscanEnable: form.pocscanEnable,
     pocscanMode: form.pocscanMode,
     pocscanAutoScan: form.pocscanAutoScan,
@@ -1463,6 +1563,15 @@ function buildConfig() {
       filterMode: form.fingerprintFilterMode,
       forceScan: form.fingerprintForceScan && !form.portscanEnable && !form.portidentifyEnable
     },
+    brutescan: {
+      enable: form.brutescanEnable,
+      services: form.brutescanServices,
+      threads: form.brutescanThreads,
+      timeout: form.brutescanTimeout,
+      delayMs: form.brutescanDelayMs,
+      stopOnFirst: form.brutescanStopOnFirst,
+      forceScan: form.brutescanForceScan && !hasPrePhaseEnabled.value
+    },
     pocscan: {
       enable: form.pocscanEnable,
       mode: form.pocscanMode,
@@ -1532,7 +1641,7 @@ async function handleSubmit() {
   // 校验：至少启用一项扫描配置
   const anyScanEnabled = form.domainscanEnable || form.portscanEnable ||
     form.portidentifyEnable || form.fingerprintEnable ||
-    form.dirscanEnable || form.pocscanEnable
+    form.brutescanEnable || form.dirscanEnable || form.pocscanEnable
   if (!anyScanEnabled) {
     ElMessage.error(t('task.noScanConfigEnabled'))
     return
@@ -2224,6 +2333,7 @@ function confirmRecursiveDictSelection() {
   form.recursiveDicts = recursiveDictList.value.filter(d => selectedRecursiveDictIds.value.includes(d.id))
   recursiveDictSelectDialogVisible.value = false
 }
+
 </script>
 
 <style lang="scss" scoped>

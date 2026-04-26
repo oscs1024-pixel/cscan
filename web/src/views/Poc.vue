@@ -370,8 +370,66 @@
             :page-sizes="[20, 50, 100]"
             layout="total, sizes, prev, pager, next"
             class="pagination"
-            @size-change="loadSubdomainDicts"
-            @current-change="loadSubdomainDicts"
+          @size-change="loadSubdomainDicts"
+          @current-change="loadSubdomainDicts"
+          />
+        </el-card>
+      </el-tab-pane>
+
+      <!-- 弱口令字典 -->
+      <el-tab-pane :label="$t('poc.weakpassDict')" name="weakpassDict">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('poc.weakpassDictManage') }}</span>
+              <span class="text-muted" style="font-size: 13px; margin-left: 10px">
+                {{ $t('poc.totalDicts', { count: weakpassDictPagination.total || 0 }) }}
+              </span>
+              <div style="margin-left: auto">
+                <el-button type="danger" size="small" @click="handleClearWeakpassDict" :loading="clearWeakpassDictLoading" style="margin-right: 10px">
+                  <el-icon><Delete /></el-icon>{{ $t('poc.clearCustomDict') }}
+                </el-button>
+                <el-button type="primary" size="small" @click="showWeakpassDictForm()">
+                  <el-icon><Plus /></el-icon>{{ $t('poc.addDict') }}
+                </el-button>
+              </div>
+            </div>
+          </template>
+          <p class="tip-text">
+            {{ $t('poc.weakpassDictTip') }}
+          </p>
+          <el-table :data="weakpassDicts" stripe v-loading="weakpassDictLoading" max-height="500">
+            <el-table-column prop="name" :label="$t('poc.dictName')" width="180" />
+            <el-table-column prop="description" :label="$t('poc.description')" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="service" :label="$t('poc.serviceType')" width="100">
+              <template #default="{ row }">
+                {{ getServiceLabel(row.service) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="wordCount" :label="$t('poc.wordCount')" width="80" />
+            <el-table-column prop="isBuiltin" :label="$t('poc.dictAttribute')" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.isBuiltin ? 'info' : 'success'" size="small">
+                  {{ row.isBuiltin ? $t('poc.builtin') : $t('poc.custom') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('poc.operation')" width="150">
+              <template #default="{ row }">
+                <el-button type="primary" link size="small" @click="showWeakpassDictForm(row)">{{ $t('poc.edit') }}</el-button>
+                <el-button type="danger" link size="small" @click="handleDeleteWeakpassDict(row)">{{ $t('poc.delete') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            v-model:current-page="weakpassDictPagination.page"
+            v-model:page-size="weakpassDictPagination.pageSize"
+            :total="weakpassDictPagination.total"
+            :page-sizes="[20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            class="pagination"
+            @size-change="loadWeakpassDicts"
+            @current-change="loadWeakpassDicts"
           />
         </el-card>
       </el-tab-pane>
@@ -444,6 +502,46 @@
       <template #footer>
         <el-button @click="subdomainDictDialogVisible = false">{{ $t('poc.cancel') }}</el-button>
         <el-button type="primary" @click="handleSaveSubdomainDict">{{ $t('poc.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 弱口令字典编辑对话框 -->
+    <el-dialog v-model="weakpassDictDialogVisible" :title="weakpassDictForm.id ? $t('poc.editDict') : $t('poc.addDictTitle')" width="700px">
+      <el-form ref="weakpassDictFormRef" :model="weakpassDictForm" :rules="weakpassDictRules" label-width="100px">
+        <el-form-item :label="$t('poc.dictNameLabel')" prop="name">
+          <el-input v-model="weakpassDictForm.name" :placeholder="$t('poc.dictNamePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('poc.descriptionLabel')">
+          <el-input v-model="weakpassDictForm.description" :placeholder="$t('poc.descriptionPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('poc.serviceType')" prop="service">
+          <el-select v-model="weakpassDictForm.service" :placeholder="$t('poc.selectServiceType')" style="width: 200px">
+            <el-option v-for="opt in serviceOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('poc.wordListLabel')" prop="content">
+          <div style="width: 100%">
+            <div class="text-muted hint-text">
+              {{ $t('poc.weakpassWordListHint') }}
+            </div>
+            <el-input
+              v-model="weakpassDictForm.content"
+              type="textarea"
+              :rows="15"
+              :placeholder="'root:password\nadmin:123456'"
+            />
+            <div class="text-muted hint-text" style="margin-top: 8px">
+              {{ $t('poc.currentWordCount') }}: {{ countWeakpassWords(weakpassDictForm.content) }}
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="$t('poc.enableLabel')">
+          <el-switch v-model="weakpassDictForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="weakpassDictDialogVisible = false">{{ $t('poc.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSaveWeakpassDict">{{ $t('poc.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1071,6 +1169,7 @@ import { Plus, Refresh, ArrowDown, UploadFilled, Upload, Download, Delete, Magic
 import { getTagMappingList, saveTagMapping, deleteTagMapping, getCustomPocList, saveCustomPoc, batchImportCustomPoc, deleteCustomPoc, clearAllCustomPoc, getNucleiTemplateList, getNucleiTemplateCategories, syncNucleiTemplates, downloadNucleiTemplates, getDownloadStatus, clearNucleiTemplates, getNucleiTemplateDetail, validatePoc as validatePocApi, getPocValidationResult, scanAssetsWithPoc, getAIConfig, saveAIConfig, validatePocSyntax } from '@/api/poc'
 import { getDirScanDictList, saveDirScanDict, deleteDirScanDict, clearDirScanDict } from '@/api/dirscan'
 import { getSubdomainDictList, saveSubdomainDict, deleteSubdomainDict, clearSubdomainDict } from '@/api/subdomain'
+import { getWeakpassDictList, saveWeakpassDict, deleteWeakpassDict, clearWeakpassDict } from '@/api/weakpass'
 import jsYaml from 'js-yaml'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
@@ -1080,7 +1179,7 @@ const router = useRouter()
 const { t } = useI18n()
 
 // 有效的tab名称
-const validTabs = ['nucleiTemplates', 'tagMapping', 'customPoc', 'dirscanDict', 'subdomainDict']
+const validTabs = ['nucleiTemplates', 'tagMapping', 'customPoc', 'dirscanDict', 'subdomainDict', 'weakpassDict']
 
 // 从URL获取初始tab
 const getInitialTab = () => {
@@ -1204,6 +1303,46 @@ const subdomainDictPagination = reactive({
   pageSize: 20,
   total: 0
 })
+
+// 弱口令字典
+const weakpassDicts = ref([])
+const weakpassDictLoading = ref(false)
+const weakpassDictDialogVisible = ref(false)
+const weakpassDictFormRef = ref()
+const clearWeakpassDictLoading = ref(false)
+const weakpassDictForm = reactive({
+  id: '',
+  name: '',
+  description: '',
+  service: 'common',
+  content: '',
+  enabled: true
+})
+const weakpassDictRules = computed(() => ({
+  name: [{ required: true, message: t('poc.dictNamePlaceholder'), trigger: 'blur' }],
+  service: [{ required: true, message: t('poc.selectServiceType'), trigger: 'change' }],
+  content: [{ required: true, message: t('poc.wordListHint'), trigger: 'blur' }]
+}))
+const weakpassDictPagination = reactive({
+  page: 1,
+  pageSize: 20,
+  total: 0
+})
+
+// 服务类型选项
+const serviceOptions = [
+  { value: 'common', label: '通用' },
+  { value: 'ssh', label: 'SSH' },
+  { value: 'mysql', label: 'MySQL' },
+  { value: 'redis', label: 'Redis' },
+  { value: 'mongodb', label: 'MongoDB' },
+  { value: 'postgresql', label: 'PostgreSQL' },
+  { value: 'mssql', label: 'MSSQL' },
+  { value: 'ftp', label: 'FTP' },
+  { value: 'oracle', label: 'Oracle' },
+  { value: 'smb', label: 'SMB' },
+  { value: 'mqtt', label: 'MQTT' }
+]
 
 // AI辅助编写POC
 const aiAssistDialogVisible = ref(false)
@@ -1472,6 +1611,8 @@ function handleTabChange(tab) {
     loadDirscanDicts()
   } else if (tab === 'subdomainDict' && subdomainDicts.value.length === 0) {
     loadSubdomainDicts()
+  } else if (tab === 'weakpassDict' && weakpassDicts.value.length === 0) {
+    loadWeakpassDicts()
   }
 }
 
@@ -3884,6 +4025,144 @@ function countSubdomainWords(content) {
     }
   }
   return count
+}
+
+// ==================== 弱口令字典相关方法 ====================
+
+// 加载弱口令字典列表
+async function loadWeakpassDicts() {
+  weakpassDictLoading.value = true
+  try {
+    const res = await getWeakpassDictList({
+      page: weakpassDictPagination.page,
+      pageSize: weakpassDictPagination.pageSize
+    })
+    if (res.code === 0) {
+      weakpassDicts.value = res.list || []
+      weakpassDictPagination.total = res.total || 0
+    }
+  } catch (e) {
+    console.error('加载弱口令字典失败:', e)
+  } finally {
+    weakpassDictLoading.value = false
+  }
+}
+
+// 显示弱口令字典编辑表单
+function showWeakpassDictForm(row = null) {
+  if (row) {
+    Object.assign(weakpassDictForm, {
+      id: row.id,
+      name: row.name,
+      description: row.description || '',
+      service: row.service,
+      content: row.content || '',
+      enabled: row.enabled
+    })
+  } else {
+    Object.assign(weakpassDictForm, {
+      id: '',
+      name: '',
+      description: '',
+      service: 'common',
+      content: '',
+      enabled: true
+    })
+  }
+  weakpassDictDialogVisible.value = true
+}
+
+// 保存弱口令字典
+async function handleSaveWeakpassDict() {
+  try {
+    await weakpassDictFormRef.value.validate()
+  } catch (e) {
+    return
+  }
+
+  try {
+    const res = await saveWeakpassDict({
+      id: weakpassDictForm.id || undefined,
+      name: weakpassDictForm.name,
+      description: weakpassDictForm.description,
+      service: weakpassDictForm.service,
+      content: weakpassDictForm.content,
+      enabled: weakpassDictForm.enabled
+    })
+    if (res.code === 0) {
+      ElMessage.success(weakpassDictForm.id ? '更新成功' : '创建成功')
+      weakpassDictDialogVisible.value = false
+      loadWeakpassDicts()
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch (e) {
+    console.error('保存弱口令字典失败:', e)
+    ElMessage.error('保存失败')
+  }
+}
+
+// 删除弱口令字典
+async function handleDeleteWeakpassDict(row) {
+  try {
+    await ElMessageBox.confirm(`确定要删除字典 "${row.name}" 吗？`, '确认删除', {
+      type: 'warning'
+    })
+    const res = await deleteWeakpassDict({ id: row.id })
+    if (res.code === 0) {
+      ElMessage.success('删除成功')
+      loadWeakpassDicts()
+    } else {
+      ElMessage.error(res.msg || '删除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('删除弱口令字典失败:', e)
+    }
+  }
+}
+
+// 清空自定义弱口令字典
+async function handleClearWeakpassDict() {
+  try {
+    await ElMessageBox.confirm('确定要清空所有自定义字典吗？内置字典不会被删除。', '确认清空', {
+      type: 'warning'
+    })
+    clearWeakpassDictLoading.value = true
+    const res = await clearWeakpassDict()
+    if (res.code === 0) {
+      ElMessage.success(`已清空 ${res.deleted} 个自定义字典`)
+      loadWeakpassDicts()
+    } else {
+      ElMessage.error(res.msg || '清空失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('清空弱口令字典失败:', e)
+    }
+  } finally {
+    clearWeakpassDictLoading.value = false
+  }
+}
+
+// 计算弱口令词条数量
+function countWeakpassWords(content) {
+  if (!content) return 0
+  const lines = content.split('\n')
+  let count = 0
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed && !trimmed.startsWith('#')) {
+      count++
+    }
+  }
+  return count
+}
+
+// 获取服务类型标签
+function getServiceLabel(service) {
+  const opt = serviceOptions.find(o => o.value === service)
+  return opt ? opt.label : service
 }
 </script>
 

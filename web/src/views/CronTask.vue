@@ -498,6 +498,67 @@
             </template>
           </el-collapse-item>
 
+          <!-- 弱口令扫描 -->
+          <el-collapse-item name="brutescan">
+            <template #title>
+              <span class="collapse-title">{{ $t('task.weakpassScan') }} <el-tag v-if="form.brutescanEnable" type="success" size="small">{{ $t('task.started') }}</el-tag></span>
+            </template>
+            <el-form-item :label="$t('task.enable')">
+              <el-switch v-model="form.brutescanEnable" />
+              <span class="form-hint">{{ $t('task.weakpassScanHint') }}</span>
+            </el-form-item>
+            <template v-if="form.brutescanEnable">
+              <el-form-item v-if="!hasPrePhaseEnabled" :label="$t('task.forceScan')">
+                <el-switch v-model="form.brutescanForceScan" />
+                <span class="form-hint warning-hint">{{ $t('task.forceScanHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.targetService')">
+                <el-checkbox-group v-model="form.brutescanServices" class="service-checkbox-group">
+                  <el-row :gutter="16">
+                    <el-col :span="6" v-for="service in bruteServiceOptions" :key="service.value">
+                      <el-checkbox :label="service.value" :value="service.value">
+                        {{ service.label }}
+                      </el-checkbox>
+                    </el-col>
+                  </el-row>
+                </el-checkbox-group>
+                <span class="form-hint">{{ $t('task.weakpassServiceHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.weakpassDict')">
+                <div class="selected-dict-summary">
+                  <el-tag type="primary" size="small" v-if="form.brutescanDictIds.length">
+                    {{ $t('task.selectedCount', { count: form.brutescanDictIds.length }) }}
+                  </el-tag>
+                  <span v-if="!form.brutescanDictIds.length" class="secondary-hint">
+                    {{ form.brutescanUseDefaultDict ? $t('task.useDefaultDict') : $t('task.noDictSelected') }}
+                  </span>
+                  <el-button type="primary" link @click="brutescanDictSelectDialogVisible = true">{{ $t('task.selectDict') }}</el-button>
+                  <el-checkbox v-model="form.brutescanUseDefaultDict" style="margin-left: 8px">{{ $t('task.useDefaultDict') }}</el-checkbox>
+                </div>
+              </el-form-item>
+              <el-row :gutter="20">
+                <el-col :span="8">
+                  <el-form-item :label="$t('task.concurrent')">
+                    <el-input-number v-model="form.brutescanThreads" :min="1" :max="100" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                  <el-form-item :label="$t('task.timeoutSeconds')">
+                    <el-input-number v-model="form.brutescanTimeout" :min="1" :max="60" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                  <el-form-item :label="$t('task.delayMs')">
+                    <el-input-number v-model="form.brutescanDelayMs" :min="0" :max="10000" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item :label="$t('task.scanStrategy')">
+                <el-checkbox v-model="form.brutescanStopOnFirst">{{ $t('task.stopOnFirstFound') }}</el-checkbox>
+              </el-form-item>
+            </template>
+          </el-collapse-item>
+
           <!-- 目录扫描 -->
           <el-collapse-item name="dirscan">
             <template #title>
@@ -807,6 +868,44 @@
       </template>
     </el-dialog>
 
+    <!-- 弱口令字典选择对话框 -->
+    <el-dialog v-model="brutescanDictSelectDialogVisible" :title="$t('task.selectWeakpassDict')" width="900px" @open="handleBrutescanDictDialogOpen">
+      <div style="margin-bottom: 12px;">
+        <el-input v-model="brutescanDictSearchKeyword" :placeholder="$t('task.searchDictPlaceholder')" clearable style="width: 300px" />
+      </div>
+      <el-table 
+        ref="brutescanDictTableRef"
+        :data="brutescanDictList" 
+        v-loading="brutescanDictLoading" 
+        max-height="400"
+        @selection-change="handleBrutescanDictSelectionChange"
+        row-key="id"
+      >
+        <el-table-column type="selection" width="45" :reserve-selection="true" />
+        <el-table-column prop="name" :label="$t('common.name')" min-width="150" />
+        <el-table-column prop="service" :label="$t('task.serviceType')" width="120">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.service || '-' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="dictType" :label="$t('task.dictType')" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.dictType === 'username' ? 'info' : 'warning'">{{ row.dictType === 'username' ? $t('task.username') : $t('task.password') }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="wordCount" :label="$t('task.wordCount')" width="100" />
+        <el-table-column prop="isBuiltin" :label="$t('common.type')" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.isBuiltin ? 'info' : 'success'" size="small">{{ row.isBuiltin ? $t('task.builtin') : $t('task.custom') }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="brutescanDictSelectDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmBrutescanDictSelection">{{ $t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
+
     <!-- POC选择对话框 -->
     <el-dialog v-model="pocSelectDialogVisible" :title="$t('task.selectPoc')" width="1260px" @open="handlePocDialogOpen">
       <div class="poc-select-container">
@@ -1022,6 +1121,7 @@ import { getTaskList } from '@/api/task'
 import { getNucleiTemplateList, getCustomPocList } from '@/api/poc'
 import { getDirScanDictEnabledList } from '@/api/dirscan'
 import { getSubdomainDictEnabledList } from '@/api/subdomain'
+import { getWeakpassDictEnabledList } from '@/api/weakpass'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -1089,7 +1189,7 @@ function getDefaultForm() {
     portidentifyTool: 'nmap',
     portidentifyTimeout: 30,
     portidentifyConcurrency: 10,
-    portidentifyArgs: '',
+    portidentifyArgs: '-sV -version-intensity 5',
     portidentifyUDP: false,
     portidentifyFastMode: false,
     portidentifyForceScan: false,
@@ -1104,6 +1204,16 @@ function getDefaultForm() {
     fingerprintTimeout: 90,
     fingerprintFilterMode: 'http_mapping',
     fingerprintForceScan: false,
+    // 弱口令扫描
+    brutescanEnable: false,
+    brutescanServices: [],
+    brutescanThreads: 20,
+    brutescanTimeout: 5,
+    brutescanDelayMs: 100,
+    brutescanDictIds: [],
+    brutescanUseDefaultDict: true,
+    brutescanStopOnFirst: false,
+    brutescanForceScan: false,
     // 漏洞扫描
     pocscanEnable: false,
     pocscanMode: 'auto',
@@ -1155,6 +1265,14 @@ const hasPrePhaseEnabled = computed(() => {
          form.portidentifyEnable || form.fingerprintEnable
 })
 
+// 弱口令字典选择相关
+const brutescanDictSelectDialogVisible = ref(false)
+const brutescanDictList = ref([])
+const brutescanDictLoading = ref(false)
+const brutescanDictTableRef = ref()
+const selectedBrutescanDictIds = ref([])
+const brutescanDictSearchKeyword = ref('')
+
 // 目录扫描字典选择相关
 const dictSelectDialogVisible = ref(false)
 const dictList = ref([])
@@ -1199,6 +1317,20 @@ const nucleiTemplateFilter = reactive({ keyword: '', severity: '', category: '',
 const customPocFilter = reactive({ name: '', severity: '', tag: '' })
 const nucleiTemplatePagination = reactive({ page: 1, pageSize: 50, total: 0 })
 const customPocPagination = reactive({ page: 1, pageSize: 50, total: 0 })
+
+// 弱口令扫描服务选项
+const bruteServiceOptions = [
+  { label: 'SSH', value: 'ssh' },
+  { label: 'MySQL', value: 'mysql' },
+  { label: 'Redis', value: 'redis' },
+  { label: 'MongoDB', value: 'mongodb' },
+  { label: 'PostgreSQL', value: 'postgresql' },
+  { label: 'MSSQL', value: 'mssql' },
+  { label: 'FTP', value: 'ftp' },
+  { label: 'Oracle', value: 'oracle' },
+  { label: 'SMB', value: 'smb' },
+  { label: 'MQTT', value: 'mqtt' },
+]
 
 // 查看POC内容相关
 const pocContentDialogVisible = ref(false)
@@ -1418,6 +1550,17 @@ function buildConfig() {
       filterMode: form.fingerprintFilterMode,
       forceScan: form.fingerprintForceScan && !form.portscanEnable && !form.portidentifyEnable
     },
+    brutescan: {
+      enable: form.brutescanEnable,
+      services: form.brutescanServices,
+      threads: form.brutescanThreads,
+      timeout: form.brutescanTimeout,
+      delayMs: form.brutescanDelayMs,
+      weakpassDictIds: form.brutescanDictIds,
+      useDefaultDict: form.brutescanUseDefaultDict,
+      stopOnFirst: form.brutescanStopOnFirst,
+      forceScan: form.brutescanForceScan && !hasPrePhaseEnabled.value
+    },
     pocscan: {
       enable: form.pocscanEnable,
       mode: form.pocscanMode,
@@ -1532,6 +1675,17 @@ function applyConfig(config) {
     form.fingerprintTimeout = config.fingerprint.timeout ?? 90
     form.fingerprintFilterMode = config.fingerprint.filterMode ?? 'http_mapping'
     form.fingerprintForceScan = config.fingerprint.forceScan ?? false
+  }
+  if (config.brutescan) {
+    form.brutescanEnable = config.brutescan.enable ?? false
+    form.brutescanServices = config.brutescan.services || []
+    form.brutescanThreads = config.brutescan.threads || 20
+    form.brutescanTimeout = config.brutescan.timeout || 5
+    form.brutescanDelayMs = config.brutescan.delayMs || 100
+    form.brutescanDictIds = config.brutescan.weakpassDictIds || []
+    form.brutescanUseDefaultDict = config.brutescan.useDefaultDict ?? true
+    form.brutescanStopOnFirst = config.brutescan.stopOnFirst ?? false
+    form.brutescanForceScan = config.brutescan.forceScan ?? false
   }
   if (config.pocscan) {
     form.pocscanEnable = config.pocscan.enable ?? false
@@ -2113,6 +2267,47 @@ async function loadEditSelectionNames() {
       console.error('loadRecursiveDictNamesFailed', e)
     }
   }
+}
+
+// ==================== 弱口令字典选择相关方法 ====================
+
+async function handleBrutescanDictDialogOpen() {
+  await loadBrutescanDictList()
+  await nextTick()
+  restoreBrutescanDictTableSelection()
+}
+
+async function loadBrutescanDictList() {
+  brutescanDictLoading.value = true
+  try {
+    const res = await getWeakpassDictEnabledList()
+    if (res.code === 0) {
+      brutescanDictList.value = res.list || []
+    }
+  } catch (e) {
+    console.error('Load weakpass dictionary list failed:', e)
+  } finally {
+    brutescanDictLoading.value = false
+  }
+}
+
+function restoreBrutescanDictTableSelection() {
+  if (!brutescanDictTableRef.value) return
+  const selectedIds = new Set(selectedBrutescanDictIds.value)
+  brutescanDictList.value.forEach(row => {
+    if (selectedIds.has(row.id)) {
+      brutescanDictTableRef.value.toggleRowSelection(row, true)
+    }
+  })
+}
+
+function handleBrutescanDictSelectionChange(selection) {
+  selectedBrutescanDictIds.value = selection.map(d => d.id)
+}
+
+function confirmBrutescanDictSelection() {
+  form.brutescanDictIds = [...selectedBrutescanDictIds.value]
+  brutescanDictSelectDialogVisible.value = false
 }
 
 function handleDelete(row) {
