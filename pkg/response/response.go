@@ -1,6 +1,7 @@
 package response
 
 import (
+	"errors"
 	"net/http"
 
 	"cscan/pkg/xerr"
@@ -35,7 +36,8 @@ func SuccessWithMsg(w http.ResponseWriter, msg string) {
 
 // Error 错误响应
 func Error(w http.ResponseWriter, err error) {
-	if codeErr, ok := err.(*xerr.CodeError); ok {
+	var codeErr *xerr.CodeError
+	if errors.As(err, &codeErr) {
 		httpx.OkJson(w, &Response{
 			Code: codeErr.Code,
 			Msg:  codeErr.Msg,
