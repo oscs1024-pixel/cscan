@@ -450,19 +450,20 @@ type DeleteAssetGroupResp struct {
 
 // ==================== 资产清单管理 ====================
 type AssetInventoryReq struct {
-	Page         int      `json:"page,default=1"`
-	PageSize     int      `json:"pageSize,default=20"`
-	Query        string   `json:"query,optional"`        // 搜索关键词
-	Technologies []string `json:"technologies,optional"` // 技术栈过滤
-	Ports        []int    `json:"ports,optional"`        // 端口过滤
-	StatusCodes  []string `json:"statusCodes,optional"`  // 状态码过滤
-	Labels       []string `json:"labels,optional"`       // 标签过滤
-	Service      string   `json:"service,optional"`      // 服务类型过滤
-	IconHash     string   `json:"iconHash,optional"`     // IconHash 过滤
-	TimeRange    string   `json:"timeRange,optional"`    // 时间范围: all/24h/7d/30d
-	SortBy       string   `json:"sortBy,optional"`       // 排序字段: time/name/port
-	GroupId      string   `json:"groupId,optional"`      // 资产分组ID
-	Domain       string   `json:"domain,optional"`       // 域名过滤
+	Page                     int      `json:"page,default=1"`
+	PageSize                 int      `json:"pageSize,default=20"`
+	Query                    string   `json:"query,optional"`                    // 搜索关键词
+	Technologies             []string `json:"technologies,optional"`             // 技术栈过滤
+	Ports                    []int    `json:"ports,optional"`                    // 端口过滤
+	StatusCodes              []string `json:"statusCodes,optional"`              // 状态码过滤
+	Labels                   []string `json:"labels,optional"`                   // 标签过滤
+	Service                  string   `json:"service,optional"`                  // 服务类型过滤
+	IconHash                 string   `json:"iconHash,optional"`                 // IconHash 过滤
+	TimeRange                string   `json:"timeRange,optional"`                // 时间范围: all/24h/7d/30d
+	SortBy                   string   `json:"sortBy,optional"`                   // 排序字段: time/name/port
+	GroupId                  string   `json:"groupId,optional"`                  // 资产分组ID
+	Domain                   string   `json:"domain,optional"`                   // 域名过滤
+	RequireRecognitionOrShot bool     `json:"requireRecognitionOrShot,optional"` // 只显示有技术栈或截图的资产
 }
 
 type AssetInventoryItem struct {
