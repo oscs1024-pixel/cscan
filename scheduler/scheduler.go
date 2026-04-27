@@ -245,7 +245,10 @@ func (s *Scheduler) PushTask(ctx context.Context, task *TaskInfo) error {
 		return err
 	}
 
-	data, _ := json.Marshal(task)
+	data, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("marshal task: %w", err)
+	}
 	// 没有指定 Worker，推送到公共队列
 	return s.rdb.ZAdd(ctx, s.queueKey, redis.Z{
 		Score:  score,
@@ -285,7 +288,10 @@ func (s *Scheduler) PushTaskBatch(ctx context.Context, tasks []*TaskInfo) error 
 			for _, workerName := range task.Workers {
 				taskCopy := *task
 				taskCopy.Workers = []string{workerName}
-				data, _ := json.Marshal(taskCopy)
+				data, err := json.Marshal(taskCopy)
+				if err != nil {
+					return fmt.Errorf("marshal task for worker %s: %w", workerName, err)
+				}
 				workerQueueKey := s.GetWorkerQueueKey(workerName)
 				pipe.ZAdd(ctx, workerQueueKey, redis.Z{
 					Score:  score,
@@ -293,8 +299,10 @@ func (s *Scheduler) PushTaskBatch(ctx context.Context, tasks []*TaskInfo) error 
 				})
 			}
 		} else {
-			data, _ := json.Marshal(task)
-			// 没有指定 Worker，推送到公共队列
+			data, err := json.Marshal(task)
+			if err != nil {
+				return fmt.Errorf("marshal task %s: %w", task.TaskId, err)
+			}
 			pipe.ZAdd(ctx, s.queueKey, redis.Z{
 				Score:  score,
 				Member: string(data),
@@ -312,22 +320,32 @@ func (s *Scheduler) PopTask(ctx context.Context) (*TaskInfo, error) {
 		s.metrics.RecordPop(time.Since(startTime))
 	}()
 
-	// 获取优先级最高的任务（分数最小）
-	results, err := s.rdb.ZPopMin(ctx, s.queueKey, 1).Result()
+	// Lua 脚本：原子化 ZPOPMIN + SADD，防止崩溃时任务丢失
+	script := redis.NewScript(`
+		local result = redis.call('ZPOPMIN', KEYS[1], 1)
+		if #result == 0 then
+			return nil
+		end
+		local member = result[1]
+		local data = cjson.decode(member)
+		if data and data.taskId then
+			redis.call('SADD', KEYS[2], data.taskId)
+		end
+		return member
+	`)
+
+	result, err := script.Run(ctx, s.rdb, []string{s.queueKey, s.processingKey}).Result()
+	if err == redis.Nil || result == nil {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	if len(results) == 0 {
-		return nil, nil
-	}
 
 	var task TaskInfo
-	if err := json.Unmarshal([]byte(results[0].Member.(string)), &task); err != nil {
+	if err := json.Unmarshal([]byte(result.(string)), &task); err != nil {
 		return nil, err
 	}
-
-	// 添加到处理中集合
-	s.rdb.SAdd(ctx, s.processingKey, task.TaskId)
 
 	return &task, nil
 }
@@ -340,32 +358,41 @@ func (s *Scheduler) PopTaskForWorker(ctx context.Context, workerName string) (*T
 		s.metrics.RecordPop(time.Since(startTime))
 	}()
 
-	// 1. 优先从Worker专属队列获取
+	// Lua 脚本：原子化从专属队列或公共队列弹出 + 加入处理集合
+	script := redis.NewScript(`
+		local member = nil
+		local result = redis.call('ZPOPMIN', KEYS[1], 1)
+		if #result > 0 then
+			member = result[1]
+		else
+			result = redis.call('ZPOPMIN', KEYS[2], 1)
+			if #result > 0 then
+				member = result[1]
+			end
+		end
+		if member == nil then
+			return nil
+		end
+		local data = cjson.decode(member)
+		if data and data.taskId then
+			redis.call('SADD', KEYS[3], data.taskId)
+		end
+		return member
+	`)
+
 	workerQueueKey := s.GetWorkerQueueKey(workerName)
-	results, err := s.rdb.ZPopMin(ctx, workerQueueKey, 1).Result()
-	if err != nil && err != redis.Nil {
-		return nil, err
-	}
-
-	// 2. 如果专属队列为空，从公共队列获取
-	if len(results) == 0 {
-		results, err = s.rdb.ZPopMin(ctx, s.queueKey, 1).Result()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(results) == 0 {
+	result, err := script.Run(ctx, s.rdb, []string{workerQueueKey, s.queueKey, s.processingKey}).Result()
+	if err == redis.Nil || result == nil {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	var task TaskInfo
-	if err := json.Unmarshal([]byte(results[0].Member.(string)), &task); err != nil {
+	if err := json.Unmarshal([]byte(result.(string)), &task); err != nil {
 		return nil, err
 	}
-
-	// 添加到处理中集合
-	s.rdb.SAdd(ctx, s.processingKey, task.TaskId)
 
 	return &task, nil
 }
