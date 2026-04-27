@@ -35,6 +35,14 @@ func NewAssetInventoryLogic(ctx context.Context, svcCtx *svc.ServiceContext) *As
 func (l *AssetInventoryLogic) buildInventoryFilter(req *types.AssetInventoryReq) bson.M {
 	filter := bson.M{}
 
+	appendAndFilter := func(condition bson.M) {
+		if existingAnd, ok := filter["$and"]; ok {
+			filter["$and"] = append(existingAnd.([]bson.M), condition)
+			return
+		}
+		filter["$and"] = []bson.M{condition}
+	}
+
 	// 搜索关键词
 	if req.Query != "" {
 		q := req.Query
@@ -77,6 +85,15 @@ func (l *AssetInventoryLogic) buildInventoryFilter(req *types.AssetInventoryReq)
 		filter["icon_hash"] = req.IconHash
 	}
 
+	if req.RequireRecognitionOrShot {
+		appendAndFilter(bson.M{
+			"$or": []bson.M{
+				{"screenshot": bson.M{"$exists": true, "$ne": ""}},
+				{"app.0": bson.M{"$exists": true}},
+			},
+		})
+	}
+
 	// 技术栈过滤
 	if len(req.Technologies) > 0 {
 		techFilters := make([]bson.M, 0, len(req.Technologies))
@@ -88,10 +105,8 @@ func (l *AssetInventoryLogic) buildInventoryFilter(req *types.AssetInventoryReq)
 		}
 		if len(techFilters) > 0 {
 			if existingOr, ok := filter["$or"]; ok {
-				filter["$and"] = []bson.M{
-					{"$or": existingOr},
-					{"$or": techFilters},
-				}
+				appendAndFilter(bson.M{"$or": existingOr})
+				appendAndFilter(bson.M{"$or": techFilters})
 				delete(filter, "$or")
 			} else {
 				filter["$or"] = techFilters
