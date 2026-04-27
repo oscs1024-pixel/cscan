@@ -47,9 +47,10 @@ type Worker struct {
 	scanners   map[string]scanner.Scanner
 	taskChan   chan *scheduler.TaskInfo
 	resultChan chan *scanner.ScanResult
-	stopChan   chan struct{}
-	wg         sync.WaitGroup
-	mu         sync.Mutex
+	stopChan chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
+	mu       sync.Mutex
 
 	taskStarted  int
 	taskExecuted int
@@ -840,8 +841,8 @@ func (w *Worker) Stop() {
 	// 通知服务器Worker即将离线，删除Redis状态数据
 	w.notifyOffline()
 
-	w.cancel() // 通知所有 goroutine 停止
-	close(w.stopChan)
+	w.cancel()
+	w.stopOnce.Do(func() { close(w.stopChan) })
 
 	// 关闭 WebSocket 客户端
 	if w.wsClient != nil {
@@ -864,8 +865,8 @@ func (w *Worker) StopImmediate() {
 	// 通知服务器Worker即将离线，删除Redis状态数据
 	w.notifyOffline()
 
-	w.cancel() // 通知所有 goroutine 停止
-	close(w.stopChan)
+	w.cancel()
+	w.stopOnce.Do(func() { close(w.stopChan) })
 
 	// 关闭 WebSocket 客户端
 	if w.wsClient != nil {
@@ -2637,15 +2638,14 @@ func (w *Worker) doSendHeartbeat(ctx context.Context) error {
 		return err
 	}
 
-	// 处理控制指令
+	// 处理控制指令（互斥，仅执行一次 Stop）
 	if resp.ManualStopFlag {
 		w.logger.Info("received stop signal, stopping worker...")
 		go func() {
 			w.Stop()
 			os.Exit(0)
 		}()
-	}
-	if resp.ManualReloadFlag {
+	} else if resp.ManualReloadFlag {
 		w.logger.Info("received reload/restart signal, restarting worker...")
 		go func() {
 			w.Stop()
