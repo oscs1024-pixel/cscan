@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1115,8 +1116,8 @@ func validateInstallKey(ctx context.Context, svcCtx *svc.ServiceContext, install
 		return ErrAuthFailed
 	}
 
-	if installKey != storedKey {
-		logx.Errorf("[WorkerWS] Invalid install key: %s", installKey)
+	if subtle.ConstantTimeCompare([]byte(installKey), []byte(storedKey)) != 1 {
+		logx.Errorf("[WorkerWS] Invalid install key attempt")
 		return ErrAuthFailed
 	}
 
