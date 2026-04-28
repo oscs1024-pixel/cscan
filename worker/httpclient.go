@@ -1074,6 +1074,51 @@ type DirScanResultResp struct {
 	Total   int64  `json:"total"`
 }
 
+
+// JSFinderResultItem JSFinder 扫描结果项
+type JSFinderResultItem struct {
+	Authority        string   `json:"authority"`
+	Host             string   `json:"host"`
+	Port             int      `json:"port"`
+	URL              string   `json:"url"`
+	Severity         string   `json:"severity"`
+	VulName          string   `json:"vulName"`
+	Result           string   `json:"result"`
+	Tags             []string `json:"tags"`
+	MatcherName      string   `json:"matcherName,omitempty"`
+	ExtractedResults []string `json:"extractedResults,omitempty"`
+	CurlCommand      string   `json:"curlCommand,omitempty"`
+	Request          string   `json:"request,omitempty"`
+	Response         string   `json:"response,omitempty"`
+}
+
+// SaveJSFinderResultReq 保存 JSFinder 扫描结果请求
+type SaveJSFinderResultReq struct {
+	WorkspaceId string                `json:"workspaceId"`
+	MainTaskId  string                `json:"mainTaskId,omitempty"`
+	Results     []*JSFinderResultItem `json:"results"`
+}
+
+// BaseResp 通用响应
+type BaseResp struct {
+	Code    int    `json:"code"`
+	Msg     string `json:"msg"`
+	Success bool   `json:"success"`
+}
+
+// SaveJSFinderResult 保存 JSFinder 扫描结果
+func (c *WorkerHTTPClient) SaveJSFinderResult(ctx context.Context, req *SaveJSFinderResultReq) (*BaseResp, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/api/v1/worker/jsfinder/save", req)
+	if err != nil {
+		return nil, err
+	}
+	var resp BaseResp
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // SaveDirScanResult 保存目录扫描结果
 func (c *WorkerHTTPClient) SaveDirScanResult(ctx context.Context, req *DirScanResultReq) (*DirScanResultResp, error) {
 	respBody, err := c.doRequest(ctx, http.MethodPost, "/api/v1/worker/task/dirscan", req)
@@ -1104,6 +1149,31 @@ func (c *WorkerHTTPClient) GetBlacklistRules(ctx context.Context) (*BlacklistRul
 	}
 
 	var resp BlacklistRulesResp
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal response failed: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// JSFinderConfigResp JSFinder 配置响应（4 份清单）
+type JSFinderConfigResp struct {
+	Code                 int      `json:"code"`
+	Msg                  string   `json:"msg"`
+	HighRiskRoutes       []string `json:"highRiskRoutes"`
+	AuthRequiredKeywords []string `json:"authRequiredKeywords"`
+	SensitiveKeywords    []string `json:"sensitiveKeywords"`
+	DomainBlacklist      []string `json:"domainBlacklist"`
+}
+
+// LoadJSFinderConfig 拉取 JSFinder 全局配置（4 份清单）
+func (c *WorkerHTTPClient) LoadJSFinderConfig(ctx context.Context) (*JSFinderConfigResp, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/api/v1/worker/config/jsfinder", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp JSFinderConfigResp
 	if err := json.Unmarshal(respBody, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal response failed: %w", err)
 	}
