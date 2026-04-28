@@ -738,6 +738,9 @@ type Vul struct {
 	Tags       []string `json:"tags,omitempty"`
 	CreateTime string   `json:"createTime"`
 	UpdateTime string   `json:"updateTime"`
+	// 证据链字段（列表页展示用）
+	MatcherName      string   `json:"matcherName,omitempty"`
+	ExtractedResults []string `json:"extractedResults,omitempty"`
 	// 新增字段 - 时间追踪
 	FirstSeenTime string `json:"firstSeenTime,omitempty"`
 	LastSeenTime  string `json:"lastSeenTime,omitempty"`
@@ -2844,4 +2847,77 @@ type PortListResp struct {
 	Msg   string         `json:"msg"`
 	Total int            `json:"total"`
 	List  []PortListItem `json:"list"`
+}
+
+// ==================== JSFinder 全局配置 ====================
+
+// JSFinderConfig JSFinder 配置
+type JSFinderConfig struct {
+	HighRiskRoutes       []string `json:"highRiskRoutes"`       // 高危路由关键词
+	AuthRequiredKeywords []string `json:"authRequiredKeywords"` // 鉴权关键词（响应包含视为已正确鉴权）
+	SensitiveKeywords    []string `json:"sensitiveKeywords"`    // 敏感数据关键词（响应包含视为信息泄漏）
+	DomainBlacklist      []string `json:"domainBlacklist"`      // 域名黑名单
+	UpdateTime           string   `json:"updateTime,omitempty"`
+}
+
+// JSFinderConfigResp 获取响应
+type JSFinderConfigResp struct {
+	Code int             `json:"code"`
+	Msg  string          `json:"msg"`
+	Data *JSFinderConfig `json:"data,omitempty"`
+}
+
+// JSFinderConfigSaveReq 保存请求
+type JSFinderConfigSaveReq struct {
+	HighRiskRoutes       []string `json:"highRiskRoutes"`
+	AuthRequiredKeywords []string `json:"authRequiredKeywords"`
+	SensitiveKeywords    []string `json:"sensitiveKeywords"`
+	DomainBlacklist      []string `json:"domainBlacklist"`
+}
+
+// ==================== JSFinder 结果 ====================
+
+type JSFinderResult struct {
+	Id               string   `json:"id,omitempty"`
+	WorkspaceId      string   `json:"workspaceId,omitempty"`
+	MainTaskId       string   `json:"mainTaskId,omitempty"`
+	TaskName         string   `json:"taskName,omitempty"`
+	Authority        string   `json:"authority"`
+	Host             string   `json:"host"`
+	Port             int      `json:"port"`
+	URL              string   `json:"url"`
+	Severity         string   `json:"severity"`
+	VulName          string   `json:"vulName"`
+	Result           string   `json:"result"`
+	Tags             []string `json:"tags"`
+	MatcherName      string   `json:"matcherName,omitempty"`
+	ExtractedResults []string `json:"extractedResults,omitempty"`
+	CurlCommand      string   `json:"curlCommand,omitempty"`
+	Request          string   `json:"request,omitempty"`
+	Response         string   `json:"response,omitempty"`
+	CreateTime       string   `json:"createTime,omitempty"`
+	UpdateTime       string   `json:"updateTime,omitempty"`
+}
+
+type SaveJSFinderResultReq struct {
+	WorkspaceId string            `json:"workspaceId"`
+	MainTaskId  string            `json:"mainTaskId,omitempty"`
+	Results     []*JSFinderResult `json:"results"`
+}
+
+type JSFinderListReq struct {
+	WorkspaceId string `json:"workspaceId,optional" form:"workspaceId,optional"`
+	Query       string `json:"query,optional" form:"query,optional"`
+	Page        int    `json:"page,default=1" form:"page,default=1"`
+	PageSize    int    `json:"pageSize,default=10" form:"pageSize,default=10"`
+	Severity    string `json:"severity,optional" form:"severity,optional"`
+	Tags        string `json:"tags,optional" form:"tags,optional"`
+	MatcherName string `json:"matcherName,optional" form:"matcherName,optional"`
+}
+
+type JSFinderListResp struct {
+	Code  int               `json:"code"`
+	Msg   string            `json:"msg"`
+	Total int64             `json:"total"`
+	List  []*JSFinderResult `json:"list"`
 }
