@@ -227,6 +227,9 @@ func (s *FingerprintScanner) RunHttpxLib(ctx context.Context, assets []*Asset, o
 				asset.HttpBody = body
 			}
 
+			// httpx 成功获取到响应，确认为 HTTP 服务
+			asset.IsHTTP = true
+
 			// Screenshot (base64)
 			if len(result.ScreenshotBytes) > 0 {
 				asset.Screenshot = base64.StdEncoding.EncodeToString(result.ScreenshotBytes)
