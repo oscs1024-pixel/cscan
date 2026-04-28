@@ -636,6 +636,39 @@
             </template>
           </el-collapse-item>
 
+          <!-- JS敏感信息扫描 -->
+          <el-collapse-item name="jsfinder">
+            <template #title>
+              <span class="collapse-title">{{ $t('task.jsfinderScan') }} <el-tag v-if="form.jsfinderEnable" type="success" size="small">{{ $t('task.started') }}</el-tag></span>
+            </template>
+            <el-form-item :label="$t('task.enable')">
+              <el-switch v-model="form.jsfinderEnable" />
+              <span class="form-hint">{{ $t('task.jsfinderScanHint') }}</span>
+            </el-form-item>
+            <template v-if="form.jsfinderEnable">
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item :label="$t('task.concurrentThreads')">
+                    <el-input-number v-model="form.jsfinderThreads" :min="1" :max="100" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item :label="$t('task.requestTimeoutSeconds')">
+                    <el-input-number v-model="form.jsfinderTimeout" :min="1" :max="60" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item :label="$t('task.enableSourcemap')">
+                <el-switch v-model="form.jsfinderEnableSourcemap" />
+                <span class="form-hint">{{ $t('task.enableSourcemapHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.enableUnauthCheck')">
+                <el-switch v-model="form.jsfinderEnableUnauthCheck" />
+                <span class="form-hint">{{ $t('task.enableUnauthCheckHint') }}</span>
+              </el-form-item>
+            </template>
+          </el-collapse-item>
+
           <!-- 漏洞扫描 -->
           <el-collapse-item name="pocscan">
             <template #title>
@@ -1170,7 +1203,13 @@ function getDefaultForm() {
     dirscanFilterMode: 'or',
     dirscanRate: 0,
     dirscanRecursion: false,
-    dirscanRecursionDepth: 2
+    dirscanRecursionDepth: 2,
+    // JS敏感信息扫描
+    jsfinderEnable: false,
+    jsfinderThreads: 10,
+    jsfinderTimeout: 10,
+    jsfinderEnableSourcemap: true,
+    jsfinderEnableUnauthCheck: true
   }
 }
 
@@ -1503,6 +1542,13 @@ function buildConfig() {
       rate: form.dirscanRate,
       recursion: form.dirscanRecursion,
       recursionDepth: form.dirscanRecursionDepth
+    },
+    jsfinder: {
+      enable: form.jsfinderEnable,
+      threads: form.jsfinderThreads,
+      timeout: form.jsfinderTimeout,
+      enableSourcemap: form.jsfinderEnableSourcemap ? undefined : false,
+      enableUnauthCheck: form.jsfinderEnableUnauthCheck ? undefined : false
     }
   }
 
@@ -1630,6 +1676,13 @@ function applyConfig(config) {
     form.dirscanRate = config.dirscan.rate ?? 0
     form.dirscanRecursion = config.dirscan.recursion ?? false
     form.dirscanRecursionDepth = config.dirscan.recursionDepth ?? 2
+  }
+  if (config.jsfinder) {
+    form.jsfinderEnable = config.jsfinder.enable ?? false
+    form.jsfinderThreads = config.jsfinder.threads ?? 10
+    form.jsfinderTimeout = config.jsfinder.timeout ?? 10
+    form.jsfinderEnableSourcemap = config.jsfinder.enableSourcemap ?? true
+    form.jsfinderEnableUnauthCheck = config.jsfinder.enableUnauthCheck ?? true
   }
 }
 
