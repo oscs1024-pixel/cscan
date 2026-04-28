@@ -497,6 +497,39 @@
             </template>
           </el-collapse-item>
 
+          <!-- JS敏感信息扫描 -->
+          <el-collapse-item name="jsfinder">
+            <template #title>
+              <span class="collapse-title">{{ $t('task.jsfinderScan') }} <el-tag v-if="form.jsfinderEnable" type="success" size="small">{{ $t('task.started') }}</el-tag></span>
+            </template>
+            <el-form-item :label="$t('task.enable')">
+              <el-switch v-model="form.jsfinderEnable" />
+              <span class="form-hint">{{ $t('task.jsfinderScanHint') }}</span>
+            </el-form-item>
+            <template v-if="form.jsfinderEnable">
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item :label="$t('task.concurrentThreads')">
+                    <el-input-number v-model="form.jsfinderThreads" :min="1" :max="100" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item :label="$t('task.requestTimeoutSeconds')">
+                    <el-input-number v-model="form.jsfinderTimeout" :min="1" :max="60" style="width:100%" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item :label="$t('task.enableSourcemap')">
+                <el-switch v-model="form.jsfinderEnableSourcemap" />
+                <span class="form-hint">{{ $t('task.enableSourcemapHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="$t('task.enableUnauthCheck')">
+                <el-switch v-model="form.jsfinderEnableUnauthCheck" />
+                <span class="form-hint">{{ $t('task.enableUnauthCheckHint') }}</span>
+              </el-form-item>
+            </template>
+          </el-collapse-item>
+
           <!-- 漏洞扫描 -->
           <el-collapse-item name="pocscan">
             <template #title>
@@ -1143,7 +1176,13 @@ const form = reactive({
   dirscanFilterMode: 'or',
   dirscanRate: 0,
   dirscanRecursion: false,
-  dirscanRecursionDepth: 2
+  dirscanRecursionDepth: 2,
+  // JS敏感信息扫描
+  jsfinderEnable: false,
+  jsfinderThreads: 10,
+  jsfinderTimeout: 10,
+  jsfinderEnableSourcemap: true,
+  jsfinderEnableUnauthCheck: true
 })
 
 // 判断是否有前序扫描阶段启用（用于控制强制扫描开关的显隐）
@@ -1216,8 +1255,9 @@ watch([
   () => form.fingerprintEnable,
   () => form.brutescanEnable,
   () => form.dirscanEnable,
+  () => form.jsfinderEnable,
   () => form.pocscanEnable
-], ([domainscan, portscan, portidentify, fingerprint, brutescan, dirscan, pocscan]) => {
+], ([domainscan, portscan, portidentify, fingerprint, brutescan, dirscan, jsfinder, pocscan]) => {
   const enabled = []
   if (domainscan) enabled.push('domainscan')
   if (portscan) enabled.push('portscan')
@@ -1225,6 +1265,7 @@ watch([
   if (fingerprint) enabled.push('fingerprint')
   if (brutescan) enabled.push('brutescan')
   if (dirscan) enabled.push('dirscan')
+  if (jsfinder) enabled.push('jsfinder')
   if (pocscan) enabled.push('pocscan')
   activeCollapse.value = enabled
 })
@@ -1361,7 +1402,13 @@ function applyConfig(config) {
     dirscanDictIds: config.dirscan?.dictIds || [],
     dirscanThreads: config.dirscan?.threads || 50,
     dirscanTimeout: config.dirscan?.timeout || 10,
-    dirscanFollowRedirect: config.dirscan?.followRedirect ?? false
+    dirscanFollowRedirect: config.dirscan?.followRedirect ?? false,
+    // JS敏感信息扫描
+    jsfinderEnable: config.jsfinder?.enable ?? false,
+    jsfinderThreads: config.jsfinder?.threads || 10,
+    jsfinderTimeout: config.jsfinder?.timeout || 10,
+    jsfinderEnableSourcemap: config.jsfinder?.enableSourcemap ?? true,
+    jsfinderEnableUnauthCheck: config.jsfinder?.enableUnauthCheck ?? true
   })
 
   // 根据启用的模块动态设置折叠面板展开状态
@@ -1372,6 +1419,7 @@ function applyConfig(config) {
   if (config.fingerprint?.enable ?? true) enabled.push('fingerprint')
   if (config.brutescan?.enable) enabled.push('brutescan')
   if (config.dirscan?.enable) enabled.push('dirscan')
+  if (config.jsfinder?.enable) enabled.push('jsfinder')
   if (config.pocscan?.enable) enabled.push('pocscan')
   activeCollapse.value = enabled
 
@@ -1605,6 +1653,13 @@ function buildConfig() {
       rate: form.dirscanRate,
       recursion: form.dirscanRecursion,
       recursionDepth: form.dirscanRecursionDepth
+    },
+    jsfinder: {
+      enable: form.jsfinderEnable,
+      threads: form.jsfinderThreads,
+      timeout: form.jsfinderTimeout,
+      enableSourcemap: form.jsfinderEnableSourcemap ? undefined : false,
+      enableUnauthCheck: form.jsfinderEnableUnauthCheck ? undefined : false
     }
   }
 
@@ -1641,7 +1696,7 @@ async function handleSubmit() {
   // 校验：至少启用一项扫描配置
   const anyScanEnabled = form.domainscanEnable || form.portscanEnable ||
     form.portidentifyEnable || form.fingerprintEnable ||
-    form.brutescanEnable || form.dirscanEnable || form.pocscanEnable
+    form.brutescanEnable || form.dirscanEnable || form.jsfinderEnable || form.pocscanEnable
   if (!anyScanEnabled) {
     ElMessage.error(t('task.noScanConfigEnabled'))
     return
