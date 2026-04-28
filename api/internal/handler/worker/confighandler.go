@@ -839,3 +839,39 @@ func WorkerConfigWeakpassDictHandler(svcCtx *svc.ServiceContext) http.HandlerFun
 		})
 	}
 }
+
+// ==================== JSFinder Config Types ====================
+
+// WorkerJSFinderConfigResp JSFinder 配置响应（供 Worker 拉取最新 4 份清单）
+type WorkerJSFinderConfigResp struct {
+	Code                 int      `json:"code"`
+	Msg                  string   `json:"msg"`
+	HighRiskRoutes       []string `json:"highRiskRoutes"`
+	AuthRequiredKeywords []string `json:"authRequiredKeywords"`
+	SensitiveKeywords    []string `json:"sensitiveKeywords"`
+	DomainBlacklist      []string `json:"domainBlacklist"`
+}
+
+// WorkerConfigJSFinderHandler JSFinder 配置获取接口
+// POST /api/v1/worker/config/jsfinder
+func WorkerConfigJSFinderHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		m := model.NewJSFinderConfigModel(svcCtx.MongoDB)
+		doc, err := m.Get(ctx)
+		if err != nil {
+			logx.Errorf("[WorkerConfigJSFinder] Get error: %v", err)
+			httpx.OkJson(w, &WorkerJSFinderConfigResp{Code: 500, Msg: "获取JSFinder配置失败"})
+			return
+		}
+
+		httpx.OkJson(w, &WorkerJSFinderConfigResp{
+			Code:                 0,
+			Msg:                  "success",
+			HighRiskRoutes:       doc.HighRiskRoutes,
+			AuthRequiredKeywords: doc.AuthRequiredKeywords,
+			SensitiveKeywords:    doc.SensitiveKeywords,
+			DomainBlacklist:      doc.DomainBlacklist,
+		})
+	}
+}

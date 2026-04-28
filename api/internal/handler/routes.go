@@ -8,6 +8,7 @@ import (
 	"cscan/api/internal/handler/blacklist"
 	"cscan/api/internal/handler/dirscan"
 	"cscan/api/internal/handler/fingerprint"
+	"cscan/api/internal/handler/jsfinder"
 	"cscan/api/internal/handler/notify"
 	"cscan/api/internal/handler/onlineapi"
 	"cscan/api/internal/handler/organization"
@@ -102,6 +103,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/api/v1/worker/config/weakpassdict", Handler: worker.WorkerConfigWeakpassDictHandler(svcCtx)},
 		// 黑名单规则（供Worker使用）
 		{Method: http.MethodPost, Path: "/api/v1/worker/config/blacklist", Handler: blacklist.BlacklistRulesHandler(svcCtx)},
+		// JSFinder 配置（供Worker使用）
+		{Method: http.MethodPost, Path: "/api/v1/worker/config/jsfinder", Handler: worker.WorkerConfigJSFinderHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/worker/jsfinder/save", Handler: jsfinder.SaveJSFinderResultHandler(svcCtx)},
 	}
 
 	// 为Worker路由包装认证中间件
@@ -398,6 +402,13 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		// 全局黑名单
 		{Method: http.MethodPost, Path: "/api/v1/blacklist/config/get", Handler: blacklist.BlacklistConfigGetHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/blacklist/config/save", Handler: blacklist.BlacklistConfigSaveHandler(svcCtx)},
+
+		// JSFinder 全局配置
+		{Method: http.MethodPost, Path: "/api/v1/jsfinder/config/get", Handler: jsfinder.JSFinderConfigGetHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/jsfinder/config/save", Handler: jsfinder.JSFinderConfigSaveHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/jsfinder/config/reset", Handler: jsfinder.JSFinderConfigResetHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/jsfinder/list", Handler: jsfinder.JSFinderListHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/jsfinder/clear", Handler: jsfinder.JSFinderClearHandler(svcCtx)},
 	}
 
 	// 为每个路由包装认证中间件
