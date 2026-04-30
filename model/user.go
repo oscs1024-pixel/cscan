@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -20,6 +21,7 @@ type User struct {
 	Id            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Username      string             `bson:"username" json:"username"`
 	Password      string             `bson:"password" json:"-"`
+	Role          string             `bson:"role,omitempty" json:"role"`
 	Status        string             `bson:"status" json:"status"`
 	WorkspaceIds  []string           `bson:"workspace_ids" json:"workspaceIds"`
 	ScanConfig    string             `bson:"scan_config" json:"scanConfig"` // 用户默认扫描配置JSON
@@ -46,8 +48,12 @@ func (m *UserModel) Insert(ctx context.Context, doc *User) error {
 	now := time.Now()
 	doc.CreateTime = now
 	doc.UpdateTime = now
-	doc.Password = HashPassword(doc.Password)
-	_, err := m.coll.InsertOne(ctx, doc)
+	hashed, err := HashPassword(doc.Password)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	doc.Password = hashed
+	_, err = m.coll.InsertOne(ctx, doc)
 	return err
 }
 
@@ -114,17 +120,17 @@ func (m *UserModel) Update(ctx context.Context, id string, update bson.M) error 
 	return err
 }
 
-func (m *UserModel) UpdateById(ctx context.Context, id string, update bson.M) error {
-	return m.Update(ctx, id, update)
-}
-
 func (m *UserModel) UpdatePassword(ctx context.Context, id string, newPassword string) error {
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return err
 	}
+	hashed, err := HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
 	update := bson.M{
-		"password":             HashPassword(newPassword),
+		"password":             hashed,
 		"must_change_password": false,
 		"update_time":          time.Now(),
 	}
@@ -196,12 +202,34 @@ func (m *UserModel) VerifyPassword(ctx context.Context, username, password strin
 	return user, true
 }
 
-func HashPassword(password string) string {
+func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("hash password: %w", err)
 	}
-	return string(hash)
+	return string(hash), nil
+}
+
+// ValidatePasswordStrength 验证密码强度：至少8位，含大小写和数字
+func ValidatePasswordStrength(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("密码长度不能少于8位")
+	}
+	hasUpper, hasLower, hasDigit := false, false, false
+	for _, c := range password {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return fmt.Errorf("密码必须包含大写字母、小写字母和数字")
+	}
+	return nil
 }
 
 // CheckPassword 验证密码是否正确

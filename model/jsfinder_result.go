@@ -68,23 +68,50 @@ func (m *JSFinderResultModel) InsertMany(ctx context.Context, results []*JSFinde
 
 // EnsureIndexes 确保索引存在
 func (m *JSFinderResultModel) EnsureIndexes(ctx context.Context) error {
+	// 兼容旧版唯一索引：删除仅含 4 字段的旧索引，重建含 result 的 5 字段版本
+	cursor, err := m.coll.Indexes().List(ctx)
+	if err == nil {
+		defer cursor.Close(ctx)
+		for cursor.Next(ctx) {
+			var idx bson.M
+			if cursor.Decode(&idx) == nil {
+				if name, _ := idx["name"].(string); name != "" && name != "_id_" {
+					if keys, ok := idx["key"].(bson.M); ok {
+						if _, hasResult := keys["result"]; !hasResult {
+							if _, hasMain := keys["main_task_id"]; hasMain {
+								if _, hasAuth := keys["authority"]; hasAuth {
+									if _, hasURL := keys["url"]; hasURL {
+										if _, hasVul := keys["vul_name"]; hasVul {
+											_, _ = m.coll.Indexes().DropOne(ctx, name)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	indexes := []mongo.IndexModel{
 		{Keys: bson.D{{Key: "host", Value: 1}}},
 		{Keys: bson.D{{Key: "main_task_id", Value: 1}}},
 		{Keys: bson.D{{Key: "severity", Value: 1}}},
 		{Keys: bson.D{{Key: "url", Value: 1}}},
-		// 创建唯一索引，防止单个任务中对相同的 URL 重复插入
+		// 唯一索引含 result 字段，允许同类型同来源的不同发现共存
 		{
 			Keys: bson.D{
 				{Key: "main_task_id", Value: 1},
 				{Key: "authority", Value: 1},
 				{Key: "url", Value: 1},
 				{Key: "vul_name", Value: 1},
+				{Key: "result", Value: 1},
 			},
 			Options: options.Index().SetUnique(true).SetBackground(true),
 		},
 	}
-	_, err := m.coll.Indexes().CreateMany(ctx, indexes)
+	_, err = m.coll.Indexes().CreateMany(ctx, indexes)
 	return err
 }
 

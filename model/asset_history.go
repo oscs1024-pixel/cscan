@@ -247,3 +247,14 @@ func (m *ScanResultHistoryModel) Clear(ctx context.Context, workspaceId string) 
 	}
 	return result.DeletedCount, nil
 }
+
+// DeleteByFilter deletes historical records matching the filter
+func (m *ScanResultHistoryModel) DeleteByFilter(ctx context.Context, workspaceId string, filter bson.M) (int64, error) {
+	// 添加 workspace_id 到过滤条件
+	filter["workspace_id"] = workspaceId
+	result, err := m.coll.DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return result.DeletedCount, nil
+}
