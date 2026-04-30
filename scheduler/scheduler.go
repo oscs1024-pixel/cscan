@@ -480,6 +480,7 @@ type JSFinderConfig struct {
 	Timeout           int   `json:"timeout,omitempty"`           // 单个 HTTP 请求超时(秒)，默认 10
 	EnableSourcemap   *bool `json:"enableSourcemap,omitempty"`   // nil=默认启用；&false=明确关闭
 	EnableUnauthCheck *bool `json:"enableUnauthCheck,omitempty"` // nil=默认启用；&false=明确关闭
+	ForceScan         bool  `json:"forceScan"`                   // 强制扫描：无资产时直接使用目标
 }
 
 // BruteScanConfig 弱口令扫描配置

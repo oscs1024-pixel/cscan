@@ -312,15 +312,10 @@ func (v *ConfigValidator) applyFingerprintDefaults(config *FingerprintConfig) {
 
 // applyPocScanDefaults 应用POC扫描默认值
 func (v *ConfigValidator) applyPocScanDefaults(config *PocScanConfig) {
-	if config.Concurrency == 0 {
-		config.Concurrency = 25
-	}
 	if config.TargetTimeout == 0 {
 		config.TargetTimeout = 600
 	}
-	if config.RateLimit == 0 {
-		config.RateLimit = 150
-	}
+	// Concurrency 和 RateLimit 由 Worker 自适应调度器决定，不再设置默认值
 }
 
 // applyDirScanDefaults 应用目录扫描默认值

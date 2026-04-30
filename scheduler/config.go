@@ -214,15 +214,10 @@ func applyPocScanDefaults(c *PocScanConfig) {
 	if c.Severity == "" {
 		c.Severity = "critical,high,medium"
 	}
-	if c.RateLimit <= 0 {
-		c.RateLimit = 150
-	}
-	if c.Concurrency <= 0 {
-		c.Concurrency = 25
-	}
 	if c.TargetTimeout <= 0 {
 		c.TargetTimeout = 600
 	}
+	// Concurrency 和 RateLimit 由 Worker 自适应调度器决定，不再设置默认值
 }
 
 func applyDirScanDefaults(c *DirScanConfig) {
