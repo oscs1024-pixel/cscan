@@ -35,9 +35,13 @@ func main() {
   \_____|_____/ \____/   \/  \/   |_| \_| 
                   RPC SERVICE            `)
 	fmt.Println("---------------------------------------------------------")
-	logx.Infof("🚀 Initializing CScan Task RPC Service...")
+	logx.Info("CScan Task RPC Service Starting")
 	fmt.Println("---------------------------------------------------------")
-	ctx := svc.NewServiceContext(c)
+	ctx, err := svc.NewServiceContext(c)
+	if err != nil {
+		logx.Errorf("Failed to initialize service: %v", err)
+		return
+	}
 
 	s := zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
 		pb.RegisterTaskServiceServer(grpcServer, server.NewTaskServiceServer(ctx))
@@ -53,9 +57,6 @@ func main() {
 	)
 	defer s.Stop()
 
-	fmt.Println("---------------------------------------------------------")
-	logx.Infof("✅ RPC Server listening at %s", c.ListenOn)
-	logx.Infof("📡 Ready to handle gRPC requests...")
-	fmt.Println("---------------------------------------------------------")
+	logx.Infof("RPC Server listening at %s", c.ListenOn)
 	s.Start()
 }

@@ -30,19 +30,19 @@ type ServiceContext struct {
 	TaskRecoveryManager     *scheduler.TaskRecoveryManager // 任务恢复管理器
 }
 
-func NewServiceContext(c config.Config) *ServiceContext {
+func NewServiceContext(c config.Config) (*ServiceContext, error) {
 	logx.Infof("Connecting to MongoDB: %s", c.Mongo.Uri)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(c.Mongo.Uri))
 	if err != nil {
-		panic(fmt.Sprintf("Failed to connect MongoDB: %v", err))
+		return nil, fmt.Errorf("connect MongoDB: %w", err)
 	}
 
 	// 测试 MongoDB 连接
 	if err := mongoClient.Ping(ctx, nil); err != nil {
-		panic(fmt.Sprintf("MongoDB ping failed: %v\nPlease ensure MongoDB is running: docker-compose -f docker-compose.dev.yaml up -d", err))
+		return nil, fmt.Errorf("ping MongoDB: %w", err)
 	}
 	logx.Info("MongoDB connected successfully")
 
@@ -58,7 +58,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	// 测试 Redis 连接
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		panic(fmt.Sprintf("Redis ping failed: %v\nPlease ensure Redis is running: docker-compose -f docker-compose.dev.yaml up -d", err))
+		return nil, fmt.Errorf("ping Redis: %w", err)
 	}
 	logx.Info("Redis connected successfully")
 
@@ -80,7 +80,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		SubfinderProviderModel:  model.NewSubfinderProviderModel(mongoDB),
 		NotifyConfigModel:       model.NewNotifyConfigModel(mongoDB),
 		TaskRecoveryManager:     recoveryManager,
-	}
+	}, nil
 }
 
 func (s *ServiceContext) GetAssetModel(workspaceId string) *model.AssetModel {

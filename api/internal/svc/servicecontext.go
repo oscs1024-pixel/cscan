@@ -3,10 +3,11 @@ package svc
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"cscan/api/internal/config"
-	"cscan/api/internal/svc/sync"
+	svcsync "cscan/api/internal/svc/sync"
 	"cscan/model"
 	"cscan/rpc/task/pb"
 	"cscan/scheduler"
@@ -47,19 +48,20 @@ type ServiceContext struct {
 	Scheduler *scheduler.Scheduler
 
 	// 同步服务
-	SyncMethods *sync.SyncMethods
+	SyncMethods *svcsync.SyncMethods
 
 	// 扫描结果服务
 	ScanResultService *ScanResultService
 	HistoryService    *HistoryService
 
-	// 缓存的模板元数据
-	TemplateCategories []string
-	TemplateTags       []string
-	TemplateStats      map[string]int
+	// 缓存的模板元数据（并发安全）
+	templateMu           sync.RWMutex
+	TemplateCategories   []string
+	TemplateTags         []string
+	TemplateStats        map[string]int
 }
 
-func NewServiceContext(c config.Config) *ServiceContext {
+func NewServiceContext(c config.Config) (*ServiceContext, error) {
 	// MongoDB连接
 	logx.Infof("Connecting to MongoDB: %s", c.Mongo.Uri)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -77,12 +79,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	mongoClient, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to connect MongoDB: %v", err))
+		return nil, fmt.Errorf("connect MongoDB: %w", err)
 	}
 
 	// 测试 MongoDB 连接
 	if err := mongoClient.Ping(ctx, nil); err != nil {
-		panic(fmt.Sprintf("MongoDB ping failed: %v\nPlease ensure MongoDB is running: docker-compose -f docker-compose.dev.yaml up -d", err))
+		return nil, fmt.Errorf("ping MongoDB: %w", err)
 	}
 	logx.Info("MongoDB connected successfully")
 
@@ -105,7 +107,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	// 测试 Redis 连接
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		panic(fmt.Sprintf("Redis ping failed: %v\nPlease ensure Redis is running: docker-compose -f docker-compose.dev.yaml up -d", err))
+		return nil, fmt.Errorf("ping Redis: %w", err)
 	}
 	logx.Info("Redis connected successfully")
 
@@ -151,7 +153,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 
 	// 初始化同步服务
-	svcCtx.SyncMethods = sync.NewSyncMethods(
+	svcCtx.SyncMethods = svcsync.NewSyncMethods(
 		svcCtx.NucleiTemplateModel,
 		svcCtx.FingerprintModel,
 		svcCtx.CustomPocModel,
@@ -170,15 +172,15 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	svcCtx.SyncMethods.SetWeakpassDictModel(svcCtx.WeakpassDictModel)
 
 	// 初始化内置扫描模板
-	sync.InitBuiltinTemplates(svcCtx.ScanTemplateModel)
+	svcsync.InitBuiltinTemplates(svcCtx.ScanTemplateModel)
 
 	// 初始化 JSFinder 全局配置（不存在则写入内置默认值）
-	sync.InitJSFinderConfig(model.NewJSFinderConfigModel(svcCtx.MongoDB))
+	svcsync.InitJSFinderConfig(model.NewJSFinderConfigModel(svcCtx.MongoDB))
 
 	// 为已存在的内置模板补全 jsfinder 字段（标准扫描默认开启）
-	sync.MigrateBuiltinTemplatesAddJSFinder(svcCtx.ScanTemplateModel)
+	svcsync.MigrateBuiltinTemplatesAddJSFinder(svcCtx.ScanTemplateModel)
 
-	return svcCtx
+	return svcCtx, nil
 }
 
 // GetAssetModel 根据workspaceId获取资产模型
@@ -224,17 +226,27 @@ func (s *ServiceContext) RefreshTemplateCache() {
 
 	categories, err := s.NucleiTemplateModel.GetCategories(ctx)
 	if err == nil {
+		s.templateMu.Lock()
 		s.TemplateCategories = categories
+		s.templateMu.Unlock()
 	}
 
-	s.TemplateTags = []string{}
+	tags := []string{}
 
 	stats, err := s.NucleiTemplateModel.GetStats(ctx)
 	if err == nil {
+		s.templateMu.Lock()
 		s.TemplateStats = stats
+		s.templateMu.Unlock()
 	}
 
+	s.templateMu.Lock()
+	s.TemplateTags = tags
+	s.templateMu.Unlock()
+
+	s.templateMu.RLock()
 	logx.Infof("[NucleiCache] Refreshed: %d categories, stats: %v", len(s.TemplateCategories), s.TemplateStats)
+	s.templateMu.RUnlock()
 }
 
 // SyncNucleiTemplates 同步Nuclei模板
