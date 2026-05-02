@@ -865,8 +865,8 @@ func (c *WorkerHTTPClient) GetSubdomainDicts(ctx context.Context, dictIds []stri
 
 // WeakpassDictReq 弱口令字典获取请求
 type WeakpassDictReq struct {
-	DictIds   []string `json:"dictIds"`
-	Services  []string `json:"services"`  // 目标服务列表
+	DictIds  []string `json:"dictIds"`
+	Services []string `json:"services"` // 目标服务列表
 }
 
 // WeakpassDictItem 弱口令字典项
@@ -875,14 +875,14 @@ type WeakpassDictItem struct {
 	Name      string `json:"name"`
 	Service   string `json:"service"`   // 服务类型
 	DictType  string `json:"dictType"`  // 字典类型：username 或 password
-	Content   string `json:"content"`  // 字典内容（每行一个）
+	Content   string `json:"content"`   // 字典内容（每行一个）
 	WordCount int    `json:"wordCount"` // 词条数量
 }
 
 // WeakpassDictResp 弱口令字典获取响应
 type WeakpassDictResp struct {
-	Code  int                 `json:"code"`
-	Msg   string              `json:"msg"`
+	Code  int                `json:"code"`
+	Msg   string             `json:"msg"`
 	Dicts []WeakpassDictItem `json:"dicts"`
 	Count int                `json:"count"`
 }
@@ -1073,7 +1073,6 @@ type DirScanResultResp struct {
 	Success bool   `json:"success"`
 	Total   int64  `json:"total"`
 }
-
 
 // JSFinderResultItem JSFinder 扫描结果项
 type JSFinderResultItem struct {

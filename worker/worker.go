@@ -48,10 +48,10 @@ type Worker struct {
 	scanners   map[string]scanner.Scanner
 	taskChan   chan *scheduler.TaskInfo
 	resultChan chan *scanner.ScanResult
-	stopChan chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
-	mu       sync.Mutex
+	stopChan   chan struct{}
+	stopOnce   sync.Once
+	wg         sync.WaitGroup
+	mu         sync.Mutex
 
 	taskStarted  int
 	taskExecuted int
@@ -1001,7 +1001,7 @@ func (w *Worker) createTaskContext(parentCtx context.Context, taskId string) (co
 			case <-ticker.C:
 				ctrl := w.checkTaskControl(ctx, taskId)
 				if ctrl == "STOP" || ctrl == "PAUSE" {
-					w.taskLog(taskId, LevelInfo, "Task %s received %s signal, cancelling context", taskId, ctrl)
+					w.taskLog(taskId, LevelInfo, "Task %s received %s signal, canceling context", taskId, ctrl)
 					cancel()
 					return
 				}
@@ -1101,7 +1101,11 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 
 	// 检查任务类型，处理POC验证任务
 	taskType, _ := taskConfig["taskType"].(string)
-	w.taskLog(task.TaskId, LevelInfo, "Step 7: Task type: '%s'", taskType)
+	if taskType == "" {
+		w.taskLog(task.TaskId, LevelInfo, "Step 7: Task type: normal scan")
+	} else {
+		w.taskLog(task.TaskId, LevelInfo, "Step 7: Task type: '%s'", taskType)
+	}
 	if taskType == "poc_validate" {
 		w.taskLog(task.TaskId, LevelInfo, "Step 7a: Executing POC validate task")
 		w.executePocValidateTask(ctx, task, taskConfig, startTime)
@@ -1547,7 +1551,7 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 		// 检查context是否被取消
 		select {
 		case <-ctx.Done():
-			w.taskLog(task.TaskId, LevelInfo, "Domain scan cancelled by context")
+			w.taskLog(task.TaskId, LevelInfo, "Domain scan canceled by context")
 			// 资产已在各阶段完成后立即保存，此处只需保存任务进度
 			w.saveTaskProgress(ctx, task, completedPhases, allAssets)
 			return
@@ -1858,8 +1862,21 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 					w.taskLog(task.TaskId, LevelInfo, "Fingerprint: FilterMode=service_mapping, filtered %d assets (excluded %d non-HTTP services), remaining %d assets",
 						len(allAssets), nonHttpCount, len(httpAssets))
 				} else {
-					// 模式A：使用HTTP映射（默认行为，不做额外过滤）
-					w.taskLog(task.TaskId, LevelInfo, "Fingerprint: FilterMode=http_mapping, using all %d assets", len(allAssets))
+					// 模式A：使用HTTP映射，过滤非HTTP资产
+					var httpAssets []*scanner.Asset
+					nonHttpCount := 0
+
+					for _, asset := range allAssets {
+						if scanner.IsHttpAsset(asset) {
+							httpAssets = append(httpAssets, asset)
+						} else {
+							nonHttpCount++
+						}
+					}
+
+					assetsToScan = httpAssets
+					w.taskLog(task.TaskId, LevelInfo, "Fingerprint: FilterMode=http_mapping, filtered %d assets (excluded %d non-HTTP assets), remaining %d assets",
+						len(allAssets), nonHttpCount, len(httpAssets))
 				}
 
 				// 获取单目标超时配置
@@ -1964,7 +1981,7 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 	// 执行弱口令扫描（在指纹识别之后、目录扫描之前）
 	if config.BruteScan != nil && config.BruteScan.Enable && !completedPhases["brutescan"] {
 		w.taskLog(task.TaskId, LevelInfo, "Brute scan: starting, total assets=%d, forceScan=%v, services=%v", len(allAssets), config.BruteScan.ForceScan, config.BruteScan.Services)
-		
+
 		// 强制扫描模式：没有资产时从用户输入目标生成资产
 		// 注意：如果目标携带端口（如 192.168.1.215:63791），会保留该端口进行扫描
 		if len(allAssets) == 0 && target != "" && config.BruteScan.ForceScan {
@@ -2076,41 +2093,41 @@ func (w *Worker) executeTask(task *scheduler.TaskInfo) {
 
 			w.updateTaskProgressWithPhase(ctx, task.TaskId, 80, "JS扫描中", "JS扫描")
 
-            jsfinderResults := w.executeJSFinder(ctx, task, allAssets, config.JSFinder, orgId)
+			jsfinderResults := w.executeJSFinder(ctx, task, allAssets, config.JSFinder, orgId)
 			if len(jsfinderResults) > 0 {
-                var schedResults []*JSFinderResultItem
-                for _, r := range jsfinderResults {
-                    schedResults = append(schedResults, &JSFinderResultItem{
-                        Authority:        r.Authority,
-                        Host:             r.Host,
-                        Port:             r.Port,
-                        URL:              r.URL,
-                        Severity:         r.Severity,
-                        VulName:          r.VulName,
-                        Result:           r.Result,
-                        Tags:             r.Tags,
-                        MatcherName:      r.MatcherName,
-                        ExtractedResults: r.ExtractedResults,
-                        CurlCommand:      r.CurlCommand,
-                        Request:          r.Request,
-                        Response:         r.Response,
-                    })
-                }
-                
-                req := &SaveJSFinderResultReq{
-                    WorkspaceId: task.WorkspaceId,
-                    MainTaskId:  task.MainTaskId,
-                    Results:     schedResults,
-                }
-                
-                resp, err := w.httpClient.SaveJSFinderResult(ctx, req)
-                if err != nil {
-                    w.taskLog(task.TaskId, LevelError, "JSFinder save failed: %v", err)
-                } else if resp.Code != 0 {
-                    w.taskLog(task.TaskId, LevelWarn, "JSFinder save response: %s", resp.Msg)
-                } else {
-                    w.taskLog(task.TaskId, LevelInfo, "JSFinder completed: saved %d findings", len(jsfinderResults))
-                }
+				var schedResults []*JSFinderResultItem
+				for _, r := range jsfinderResults {
+					schedResults = append(schedResults, &JSFinderResultItem{
+						Authority:        r.Authority,
+						Host:             r.Host,
+						Port:             r.Port,
+						URL:              r.URL,
+						Severity:         r.Severity,
+						VulName:          r.VulName,
+						Result:           r.Result,
+						Tags:             r.Tags,
+						MatcherName:      r.MatcherName,
+						ExtractedResults: r.ExtractedResults,
+						CurlCommand:      r.CurlCommand,
+						Request:          r.Request,
+						Response:         r.Response,
+					})
+				}
+
+				req := &SaveJSFinderResultReq{
+					WorkspaceId: task.WorkspaceId,
+					MainTaskId:  task.MainTaskId,
+					Results:     schedResults,
+				}
+
+				resp, err := w.httpClient.SaveJSFinderResult(ctx, req)
+				if err != nil {
+					w.taskLog(task.TaskId, LevelError, "JSFinder save failed: %v", err)
+				} else if resp.Code != 0 {
+					w.taskLog(task.TaskId, LevelWarn, "JSFinder save response: %s", resp.Msg)
+				} else {
+					w.taskLog(task.TaskId, LevelInfo, "JSFinder completed: saved %d findings", len(jsfinderResults))
+				}
 			}
 			w.updateTaskProgressWithPhase(ctx, task.TaskId, 85, "JS扫描完成", "JS扫描")
 			completedPhases["jsfinder"] = true
@@ -3416,7 +3433,7 @@ func (w *Worker) generateBruteAssetsFromTargets(target string, services []string
 			targetServices = append(targetServices, svc)
 		}
 	}
-	
+
 	// 转换为集合便于查找
 	targetServiceSet := make(map[string]bool)
 	for _, svc := range targetServices {
@@ -4244,7 +4261,7 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 
 	// 过滤出可爆破的资产（有明确服务识别的资产）
 	var bruteAssets []*scanner.Asset
-	
+
 	// 如果配置了服务列表，建立服务集合
 	serviceSet := make(map[string]bool)
 	hasServiceFilter := len(config.Services) > 0
@@ -4291,7 +4308,7 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 	var usernameDict, passwordDict string
 	usernameSet := make(map[string]struct{})
 	passwordSet := make(map[string]struct{})
-	
+
 	// 服务特定字典：service -> entries
 	serviceDicts := make(map[string][]scanner.ServiceDictEntry)
 
@@ -4313,25 +4330,25 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 			if serviceType == "" {
 				serviceType = "common"
 			}
-			
+
 			// 解析 user:password 格式的字典内容
 			lines := strings.Split(dict.Content, "\n")
 			currentService := serviceType
-			
-		for _, line := range lines {
-			// 清理行尾的 \r（处理 Windows CRLF 格式）
-			line = strings.TrimRight(line, "\r")
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-				
+
+			for _, line := range lines {
+				// 清理行尾的 \r（处理 Windows CRLF 格式）
+				line = strings.TrimRight(line, "\r")
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+
 				// 检查是否是服务分组标记 [service]
 				if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 					currentService = strings.ToLower(strings.Trim(line, "[]"))
 					continue
 				}
-				
+
 				// 按冒号分割
 				parts := strings.SplitN(line, ":", 2)
 				username := ""
@@ -4342,7 +4359,7 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 				if len(parts) >= 2 {
 					password = strings.TrimSpace(parts[1])
 				}
-				
+
 				// 添加到通用集合
 				if username != "" {
 					usernameSet[username] = struct{}{}
@@ -4350,7 +4367,7 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 				if password != "" {
 					passwordSet[password] = struct{}{}
 				}
-				
+
 				// 添加到服务特定字典
 				if username != "" || password != "" {
 					entry := scanner.ServiceDictEntry{
@@ -4368,13 +4385,13 @@ func (w *Worker) executeBruteScan(ctx context.Context, task *scheduler.TaskInfo,
 		for p := range passwordSet {
 			passwordDict += p + "\n"
 		}
-		
+
 		// 统计服务字典信息
 		serviceDictInfo := make([]string, 0, len(serviceDicts))
 		for svc, entries := range serviceDicts {
 			serviceDictInfo = append(serviceDictInfo, fmt.Sprintf("%s(%d)", svc, len(entries)))
 		}
-		
+
 		w.taskLog(task.TaskId, LevelInfo, "Brute scan: using %d dicts, %d usernames, %d passwords, services: %v",
 			len(dictResp.Dicts), len(usernameSet), len(passwordSet), serviceDictInfo)
 	}

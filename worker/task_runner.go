@@ -76,7 +76,7 @@ type TaskContext struct {
 	Vulnerabilities []*scanner.Vulnerability
 	CompletedPhases map[TaskPhase]bool
 	Runner          *TaskRunner
-	Worker          *Worker // 引用Worker以访问其方法
+	Worker          *Worker  // 引用Worker以访问其方法
 	SkippedHosts    []string // 因端口阈值超限被跳过的主机列表，后续阶段应跳过这些主机
 }
 

@@ -2,13 +2,14 @@ package worker
 
 import (
 	"context"
-	"cscan/scanner"
 	"math"
 	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"cscan/scanner"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
@@ -113,7 +114,7 @@ func DefaultAdaptiveSchedulerConfig(baseConcurrency int) *AdaptiveSchedulerConfi
 		memHigh = 85.0
 		memCritical = 95.0
 		processMemLowMB = 1024
-		processMemHighMB = 1536  // 允许 1.5GB 不触发降级
+		processMemHighMB = 1536     // 允许 1.5GB 不触发降级
 		processMemCriticalMB = 2048 // 2GB 才触发 critical
 	case scanner.ProfileMedium:
 		// 中配 (<=8核 且 <=16GB): 适度放宽
