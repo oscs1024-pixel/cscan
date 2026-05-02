@@ -47,6 +47,9 @@ RUN apk add --no-cache \
 # 设置时区
 ENV TZ=Asia/Shanghai
 
+# 设置 Nmap 脚本引擎路径（Alpine nmap 包需要显式指定）
+ENV NMAPDIR=/usr/share/nmap
+
 # 复制 ip2region 数据库
 COPY --from=builder /app/data ./data/
 
